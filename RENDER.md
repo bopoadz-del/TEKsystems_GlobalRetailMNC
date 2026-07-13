@@ -69,7 +69,7 @@ with session_scope() as s:
 "
 ```
 
-Copy a returned project id (Riyadh / Melbourne) into the UI header.
+Copy a returned project id (Australia / Global) into the UI header.
 
 ## Smoke checklist
 
@@ -79,12 +79,12 @@ Verified against live after the hardened `main` redeploy:
 2. `GET /` → 200 HTML business shell (+ `/assets/*.js` / `.css` 200)  
 3. `GET /v1/overview`, `GET /v1/actions` with `X-User-Id` / `X-Tenant-Id` / `X-Project-Id`  
 4. After fixtures: cited `/v1/ask`; three retail actions succeed; empty project → `dependency_required`  
-5. Melbourne project citations stay Melbourne-scoped (no Riyadh filenames)
+5. Australia project citations stay Australia-scoped (no Global-only suppliers)
 
 ## Two-minute demo
 
 1. Open https://retailops-3ayp.onrender.com/  
-2. Paste Riyadh project id from fixture load  
+2. Paste Australia or Global project id from fixture load  
 3. Assistant: stock discrepancy escalation → citations  
 4. Actions: inventory risk → success; unknown/empty project → `dependency_required`  
 5. Audit: persisted runs with status/duration/evidence count  

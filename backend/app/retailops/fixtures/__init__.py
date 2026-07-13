@@ -1,1 +1,1 @@
-"""Fictional RetailOps fixture pack (Northstar Global Retail)."""
+"""Fictional RetailOps fixture pack (Meridian Markets — Australia + Global)."""

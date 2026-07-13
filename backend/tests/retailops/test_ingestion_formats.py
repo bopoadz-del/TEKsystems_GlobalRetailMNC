@@ -10,7 +10,7 @@ from app.retailops import bootstrap
 from app.retailops.ingestion import detect_type, ingest_document, parse_bytes
 from app.retailops.models import Document, DocumentChunk
 
-FIXTURES = Path(__file__).resolve().parents[2] / "app" / "retailops" / "fixtures" / "northstar"
+FIXTURES = Path(__file__).resolve().parents[2] / "app" / "retailops" / "fixtures" / "meridian"
 
 
 def test_detect_type():
@@ -24,12 +24,12 @@ def test_detect_type():
 
 def test_every_format_parses():
     samples = {
-        "riyadh/sop_stock_discrepancy.pdf": "pdf",
-        "riyadh/promotion_evidence.docx": "docx",
-        "riyadh/promotion_rules.md": "markdown",
-        "riyadh/supplier_notice.txt": "txt",
-        "riyadh/inventory.csv": "csv",
-        "riyadh/inventory.xlsx": "xlsx",
+        "global/sop_stock_discrepancy.pdf": "pdf",
+        "global/promotion_evidence.docx": "docx",
+        "global/promotion_rules.md": "markdown",
+        "global/supplier_notice.txt": "txt",
+        "global/inventory.csv": "csv",
+        "global/inventory.xlsx": "xlsx",
     }
     for rel, _ in samples.items():
         data = (FIXTURES / rel).read_bytes()
@@ -41,7 +41,7 @@ def test_every_format_parses():
 def test_csv_preserves_row_provenance_and_structured_rows(db):
     bootstrap.ensure_tenant(db, "t1", "t1")
     pid = bootstrap.ensure_project(db, tenant_id="t1", canonical_name="P").id
-    data = (FIXTURES / "riyadh" / "inventory.csv").read_bytes()
+    data = (FIXTURES / "global" / "inventory.csv").read_bytes()
     doc = ingest_document(db, tenant_id="t1", project_id=pid, filename="inventory.csv", data=data)
     db.commit()
     chunks = db.execute(
@@ -60,13 +60,13 @@ def test_csv_preserves_row_provenance_and_structured_rows(db):
 def test_xlsx_sheet_provenance(db):
     bootstrap.ensure_tenant(db, "t1", "t1")
     pid = bootstrap.ensure_project(db, tenant_id="t1", canonical_name="P").id
-    data = (FIXTURES / "riyadh" / "inventory.xlsx").read_bytes()
+    data = (FIXTURES / "global" / "inventory.xlsx").read_bytes()
     doc = ingest_document(db, tenant_id="t1", project_id=pid, filename="inventory.xlsx", data=data)
     db.commit()
     chunks = db.execute(
         select(DocumentChunk).where(DocumentChunk.document_id == doc.id)
     ).scalars().all()
-    assert any(c.sheet == "Riyadh Olaya" for c in chunks)
+    assert any(c.sheet == "Singapore Orchard" for c in chunks)
 
 
 def test_ingest_marks_document_processed(db):

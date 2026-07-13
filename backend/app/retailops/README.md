@@ -1,9 +1,9 @@
 # CEREBRUM RetailOps — TEKsystems Global Retail MNC
 
-Standalone deployable retail-operations platform for the Northstar Global
-Retail portfolio pilot. It ingests fictional retail records, answers
-document-grounded questions with citations, executes three retail deliverable
-actions with full audit evidence, and serves a business UI.
+Standalone deployable retail-operations platform for an Australian mega retailer
+with global flagship operations (fictional Meridian Markets demo). It ingests
+retail records, answers document-grounded questions with citations, executes
+three retail deliverable actions with full audit evidence, and serves a business UI.
 
 This repository is the **product**. Upstream CerebrumDev.ai / Cerebrum-Blocks
 may be used as design references; the action contract and Retail kit ship here
@@ -58,7 +58,7 @@ docker compose up --build
 # App: http://localhost:8000/   Health: http://localhost:8000/health
 ```
 
-Load fictional Northstar fixtures (Riyadh + Melbourne):
+Load fictional Meridian Markets fixtures (Australia + Global):
 
 ```bash
 docker compose exec app python -c "
@@ -98,7 +98,7 @@ Live service (when deployed): https://retailops-3ayp.onrender.com
 ## API examples
 
 ```bash
-H='-H X-User-Id:u_ops_manager -H X-Tenant-Id:northstar -H X-Project-Id:<PID> -H Content-Type:application/json'
+H='-H X-User-Id:u_ops_manager -H X-Tenant-Id:meridian -H X-Project-Id:<PID> -H Content-Type:application/json'
 curl -s $H localhost:8000/v1/actions
 curl -s $H -d '{"question":"What is the escalation process for a stock discrepancy?"}' localhost:8000/v1/ask
 curl -s $H -d '{"arguments":{"period":"daily"}}' localhost:8000/v1/actions/retail.generate_operations_brief/execute
@@ -107,9 +107,9 @@ curl -s $H localhost:8000/v1/audit
 
 ## Fixture data
 
-`backend/app/retailops/fixtures/northstar/` — fictional **Northstar Global Retail**
-for *Northstar Riyadh Region* and *Northstar Melbourne Region*. No real client
-or employer data.
+`backend/app/retailops/fixtures/meridian/` — fictional **Meridian Markets** for
+*Meridian Australia Region* and *Meridian Global Region*. No real client or
+employer data.
 
 ## Security
 

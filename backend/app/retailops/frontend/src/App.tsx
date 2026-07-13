@@ -13,7 +13,7 @@ export function App() {
   const [tab, setTab] = useState<Tab>("Overview");
   const [principal, setPrincipal] = useState<Principal>({
     userId: "u_ops_manager",
-    tenantId: "northstar",
+    tenantId: "meridian",
     projectId: "",
   });
 
@@ -42,8 +42,8 @@ export function App() {
       {!principal.projectId && (
         <div className="card">
           <p className="muted">
-            Enter a <strong>project id</strong> above to begin. Load the Northstar fixture
-            pack via the backend, then paste a generated project id here.
+            Enter a <strong>project id</strong> above to begin. Load the Meridian Markets
+            fixture pack (Australia + Global) via the backend, then paste a project id here.
           </p>
         </div>
       )}

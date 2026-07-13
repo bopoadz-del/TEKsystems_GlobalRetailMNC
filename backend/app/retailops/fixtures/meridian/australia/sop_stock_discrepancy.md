@@ -1,4 +1,4 @@
-# Northstar SOP: Stock Discrepancy Escalation (Melbourne)
+# Meridian Markets SOP: Stock Discrepancy Escalation (Australia)
 
 Fictional SOP for demonstration.
 

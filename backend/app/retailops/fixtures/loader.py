@@ -1,7 +1,8 @@
-"""Load the fictional Northstar fixture pack into the operational store.
+"""Load the fictional Meridian Markets fixture pack into the operational store.
 
 Two canonical projects are created and their documents ingested with document
-roles (used by schema-driven context enrichment). All data is fictional.
+roles (used by schema-driven context enrichment). All data is fictional —
+an Australian mega retailer with global flagship operations.
 """
 
 from __future__ import annotations
@@ -14,16 +15,16 @@ from sqlalchemy.orm import Session
 from app.retailops import bootstrap
 from app.retailops.ingestion import ingest_document
 
-_HERE = Path(__file__).resolve().parent / "northstar"
+_HERE = Path(__file__).resolve().parent / "meridian"
 
-TENANT_ID = "northstar"
-TENANT_NAME = "Northstar Global Retail"
+TENANT_ID = "meridian"
+TENANT_NAME = "Meridian Markets"
 
 # Canonical project name -> fixture subdirectory. Stable canonical names let
 # tests resolve generated project IDs by name.
 PROJECTS: Dict[str, str] = {
-    "Northstar Riyadh Region": "riyadh",
-    "Northstar Melbourne Region": "melbourne",
+    "Meridian Australia Region": "australia",
+    "Meridian Global Region": "global",
 }
 
 # Default pilot principals with retail permissions.
@@ -66,9 +67,6 @@ def load_fixtures(session: Session, tenant_id: str = TENANT_ID) -> Dict[str, str
         )
         project_ids[canonical_name] = project.id
         folder = _HERE / subdir
-        # Skip CSV when an equivalent XLSX exists to avoid duplicate rows; both
-        # are ingested to demonstrate every format, but from different projects
-        # if desired. Here we ingest all files (formats coverage).
         for path in sorted(folder.iterdir()):
             if not path.is_file():
                 continue

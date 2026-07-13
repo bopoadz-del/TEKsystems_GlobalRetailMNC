@@ -82,7 +82,7 @@ def client():
 
 @pytest.fixture()
 def loaded_projects(db):
-    """Load the Northstar fixture pack and commit; return {canonical: id}."""
+    """Load the Meridian Markets fixture pack and commit; return {canonical: id}."""
     from app.retailops.db import session_scope
     from app.retailops.fixtures.loader import load_fixtures
 
