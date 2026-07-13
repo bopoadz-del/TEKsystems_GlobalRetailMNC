@@ -1,8 +1,8 @@
-"""Generic domain-action contract for Cerebrum-Blocks.
+"""Generic domain-action contract (local kit snapshot).
 
 This package defines a domain-neutral, strongly typed contract for *actions*
-(deliverable/analysis operations) that domain kits expose to a host runtime
-(e.g. the CerebrumDev.ai platform factory).
+(deliverable/analysis operations) that domain kits expose to the RetailOps
+host runtime in this repository.
 
 The contract is intentionally generic: the host runtime dispatches actions
 purely by their registered :class:`ActionSpec`. Adding a new action to a kit

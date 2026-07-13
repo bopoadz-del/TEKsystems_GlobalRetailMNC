@@ -1,18 +1,18 @@
-"""RetailOps generated-runtime package.
+"""RetailOps standalone product runtime (TEKsystems Global Retail MNC).
 
-This package is the *generated product* runtime for the CEREBRUM RetailOps
-pilot. It bundles a pinned snapshot of the Cerebrum-Blocks generic action
-contract + Retail kit (under :mod:`app.retailops.kit`) and adds the platform
-runtime: PostgreSQL/pgvector persistence, hybrid retrieval, ingestion,
-citations, LLM providers, a LangGraph orchestrator, generic action APIs and
-audit persistence.
+This package is the deployable retail-operations product: PostgreSQL/pgvector
+persistence, hybrid retrieval, ingestion, citations, LLM providers, a LangGraph
+orchestrator, generic action APIs, audit persistence, and a business UI.
 
-The exact Cerebrum-Blocks commit the kit was vendored from is recorded in
-``BLOCKS_COMMIT`` (see build metadata / docs).
+The action contract + Retail kit live under :mod:`app.retailops.kit` as a
+**local kit snapshot** shipped with this repository. Upstream CerebrumDev.ai /
+Cerebrum-Blocks may be used as design references; this product does not depend
+on a live pin to those remotes.
 """
 
 RETAILOPS_VERSION = "1.0.0"
 
-# Exact Cerebrum-Blocks commit the vendored kit (app/retailops/kit) was built
-# from. Update together with app/retailops/kit when re-vendoring.
-BLOCKS_COMMIT = "4a5ad84246f885764ba05d1ab1398dc0d2b56be3"
+# Local kit snapshot id (not a Git commit SHA). Kept as BLOCKS_COMMIT for
+# backward-compatible /health JSON and build metadata fields.
+KIT_SNAPSHOT_ID = "local-retail-kit-1.1.0"
+BLOCKS_COMMIT = KIT_SNAPSHOT_ID

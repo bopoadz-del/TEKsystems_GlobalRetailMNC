@@ -1,8 +1,8 @@
-"""FastAPI application factory for the generated RetailOps runtime.
+"""FastAPI application factory for the RetailOps runtime.
 
-Exposes /health and the documented API routes, serves the generated business
-frontend (when built), and — in a deployed container — applies mandatory
-database migrations on startup, failing startup if they cannot be applied.
+Exposes /health and the documented API routes, serves the business frontend
+(when built), and — in a deployed container — applies mandatory database
+migrations on startup, failing startup if they cannot be applied.
 """
 
 from __future__ import annotations
@@ -18,13 +18,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
-from app.retailops import BLOCKS_COMMIT, RETAILOPS_VERSION
+from app.retailops import BLOCKS_COMMIT, KIT_SNAPSHOT_ID, RETAILOPS_VERSION
 from app.retailops.api import router as api_router
 from app.retailops.db import get_engine, init_engine
 
 logger = logging.getLogger("retailops")
 
 _FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
+_FRONTEND_INDEX = _FRONTEND_DIST / "index.html"
 
 
 @asynccontextmanager
@@ -66,21 +67,37 @@ def create_app() -> FastAPI:
         return {
             "status": "ok" if db_ok else "degraded",
             "version": RETAILOPS_VERSION,
+            "kit_snapshot": KIT_SNAPSHOT_ID,
+            # Legacy key retained for existing clients / Render smoke scripts.
             "blocks_commit": BLOCKS_COMMIT,
             "database": "ok" if db_ok else "unavailable",
         }
 
     app.include_router(api_router)
 
-    # Serve the generated business frontend if it has been built.
-    if _FRONTEND_DIST.is_dir():
+    # Serve the business frontend when the Vite dist has been built into the image.
+    if _FRONTEND_INDEX.is_file():
         assets = _FRONTEND_DIST / "assets"
         if assets.is_dir():
             app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
 
         @app.get("/")
         def _index():
-            return FileResponse(str(_FRONTEND_DIST / "index.html"))
+            return FileResponse(str(_FRONTEND_INDEX))
+
+        @app.get("/{full_path:path}")
+        def _spa(full_path: str):
+            # Never shadow API/health; those are registered above.
+            if full_path.startswith("v1/") or full_path in {"health", "docs", "openapi.json", "redoc"}:
+                from fastapi import HTTPException
+
+                raise HTTPException(status_code=404, detail="Not Found")
+            candidate = _FRONTEND_DIST / full_path
+            if full_path and candidate.is_file():
+                return FileResponse(str(candidate))
+            return FileResponse(str(_FRONTEND_INDEX))
+    else:
+        logger.warning("frontend dist missing at %s — UI will not be served", _FRONTEND_DIST)
 
     return app
 

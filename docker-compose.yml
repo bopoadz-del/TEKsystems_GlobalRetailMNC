@@ -1,6 +1,6 @@
-# Local RetailOps stack: PostgreSQL 16 + pgvector and the generated runtime.
-# Usage (from repo root):
-#   docker compose -f backend/app/retailops/deploy/docker-compose.yml up --build
+# Local RetailOps stack from the repository root.
+# Usage:
+#   docker compose up --build
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -20,10 +20,12 @@ services:
 
   app:
     build:
-      context: ../../../..
+      context: .
       dockerfile: backend/app/retailops/deploy/Dockerfile
     environment:
       RETAILOPS_DATABASE_URL: postgresql+psycopg://retailops:retailops@db:5432/retailops
+      RETAILOPS_EMBED_BACKEND: hash
+      RETAILOPS_LLM_PROVIDER: fake
       PORT: "8000"
     ports:
       - "8000:8000"
