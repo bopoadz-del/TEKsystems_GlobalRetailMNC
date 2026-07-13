@@ -297,3 +297,43 @@ def overview(
         ],
         "system_health": {"database": "ok", "kit_domains": INSTALLED_DOMAINS},
     }
+
+
+@router.get("/v1/packs/retail_core_open_v1")
+def pack_release_status(session: Session = Depends(get_session)) -> Dict[str, Any]:
+    """Inspect retail_core_open_v1 release identity, sources, and load counts."""
+    from app.retailops.models import RetailPackSource, RetailSale, RetailTransaction
+    from app.retailops.packs.retail_core_open_v1 import RELEASE_ID
+    from app.retailops.packs.retail_core_open_v1.registry import load_manifest, release_identity
+
+    sources = session.execute(
+        select(RetailPackSource).where(RetailPackSource.release_id == RELEASE_ID)
+    ).scalars().all()
+    sales = session.execute(
+        select(func.count()).select_from(RetailSale).where(RetailSale.release_id == RELEASE_ID)
+    ).scalar_one()
+    txns = session.execute(
+        select(func.count()).select_from(RetailTransaction).where(
+            RetailTransaction.release_id == RELEASE_ID
+        )
+    ).scalar_one()
+    return {
+        "identity": release_identity(),
+        "manifest": {
+            "release_id": load_manifest().get("release_id"),
+            "source_count": len(load_manifest().get("sources") or []),
+        },
+        "loaded_sources": [
+            {
+                "source_id": s.source_id,
+                "status": s.status,
+                "structured_row_count": s.structured_row_count,
+                "document_count": s.document_count,
+                "chunk_count": s.chunk_count,
+                "content_checksum": s.content_checksum,
+                "knowledge_layer": s.knowledge_layer,
+            }
+            for s in sources
+        ],
+        "counts": {"retail_sales": sales, "retail_transactions": txns},
+    }

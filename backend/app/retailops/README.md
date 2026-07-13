@@ -1,7 +1,7 @@
 # CEREBRUM RetailOps — TEKsystems Global Retail MNC
 
-Standalone deployable retail-operations platform for the Northstar Global
-Retail portfolio pilot. It ingests fictional retail records, answers
+Standalone deployable retail-operations platform for multi-region retail
+operations. It ingests documents and open evaluation datasets, answers
 document-grounded questions with citations, executes three retail deliverable
 actions with full audit evidence, and serves a business UI.
 
@@ -48,7 +48,7 @@ Namespaced deliverables — adding one requires **no** router change:
 - `retail.check_promotion_compliance`
 
 Kit id exposed on `/health` as `kit_snapshot` / legacy `blocks_commit`:
-`local-retail-kit-1.1.0`.
+`local-retail-kit-1.2.0`.
 
 ## Local run (Docker — preferred)
 
@@ -58,7 +58,7 @@ docker compose up --build
 # App: http://localhost:8000/   Health: http://localhost:8000/health
 ```
 
-Load fictional Northstar fixtures (Riyadh + Melbourne):
+Load generic regional fixtures (Australia + Global):
 
 ```bash
 docker compose exec app python -c "
@@ -98,7 +98,7 @@ Live service (when deployed): https://retailops-3ayp.onrender.com
 ## API examples
 
 ```bash
-H='-H X-User-Id:u_ops_manager -H X-Tenant-Id:northstar -H X-Project-Id:<PID> -H Content-Type:application/json'
+H='-H X-User-Id:u_ops_manager -H X-Tenant-Id:retail -H X-Project-Id:<PID> -H Content-Type:application/json'
 curl -s $H localhost:8000/v1/actions
 curl -s $H -d '{"question":"What is the escalation process for a stock discrepancy?"}' localhost:8000/v1/ask
 curl -s $H -d '{"arguments":{"period":"daily"}}' localhost:8000/v1/actions/retail.generate_operations_brief/execute
@@ -107,9 +107,9 @@ curl -s $H localhost:8000/v1/audit
 
 ## Fixture data
 
-`backend/app/retailops/fixtures/northstar/` — fictional **Northstar Global Retail**
-for *Northstar Riyadh Region* and *Northstar Melbourne Region*. No real client
-or employer data.
+`backend/app/retailops/fixtures/demo/` — fictional regional project fixtures for
+*Australia Region* and *Global Region* (no retailer brand names). Open knowledge
+lives in the `retail_core_open_v1` platform-prebuilt release.
 
 ## Security
 
@@ -118,6 +118,6 @@ for isolation. Audit stores hashes/metadata — never secrets.
 
 ## Known limitations
 
-- Default embeddings are deterministic feature-hash (`RETAILOPS_EMBED_BACKEND=hash`).
+- Live embeddings default to real ONNX BGE-small (`RETAILOPS_EMBED_BACKEND=fastembed`); tests use `hash`.
 - Fake LLM provider is credential-free; set Azure/OpenAI for fluent synthesis.
 - SPA is served only when `frontend/dist` is present in the image (Docker build).

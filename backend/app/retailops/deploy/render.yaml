@@ -19,7 +19,7 @@ services:
           name: retailops-db
           property: connectionString
       - key: RETAILOPS_EMBED_BACKEND
-        value: hash
+        value: fastembed
       - key: RETAILOPS_LLM_PROVIDER
         value: auto
       # Azure OpenAI is optional; provide as secrets when available.

@@ -1,0 +1,107 @@
+{
+  "schema_version": "1.0.0",
+  "release_id": "retail_core_open_v1",
+  "rag_pack_id": "retail_core_rag",
+  "collection_id": "prebuilt_retail_core",
+  "domain": "retail",
+  "name": "Retail Core Open Content Release v1",
+  "description": "FDA/OSHA/FTC text guidance plus FreshRetailNet and UCI structured evaluation data. Controlled summaries only enter the vector index.",
+  "knowledge_layers": {
+    "platform_prebuilt": "FDA, OSHA, FTC, controlled analytical summaries",
+    "structured_public_eval": "FreshRetailNet subset, UCI Online Retail II",
+    "tenant_project": "Generic project fixture rules and evidence (no brand names)"
+  },
+  "embedding": {
+    "production_backend": "fastembed",
+    "model": "BAAI/bge-small-en-v1.5",
+    "dimension": 384,
+    "test_backend": "hash"
+  },
+  "freshretailnet_subset_rule": "store_id in the 50 smallest distinct store_ids; keep all dates/products for those stores",
+  "sources": [
+    {
+      "source_id": "fda_food_code_2022",
+      "source_type": "document",
+      "structured_or_text": "text",
+      "source_name": "FDA Food Code 2022",
+      "publisher": "U.S. Food and Drug Administration",
+      "jurisdiction": "United States",
+      "authority_level": "official_guidance",
+      "source_class": "official_guidance",
+      "edition": "2022",
+      "not_universal_law": true,
+      "original_url": "https://www.fda.gov/food/retail-food-protection/fda-food-code",
+      "download_hint": "Resolve official 2022 PDF from FDA Food Code page"
+    },
+    {
+      "source_id": "osha_retail_grocery_2009",
+      "source_type": "document",
+      "structured_or_text": "text",
+      "source_name": "Guidelines for Retail Grocery Stores",
+      "publisher": "Occupational Safety and Health Administration",
+      "jurisdiction": "United States",
+      "authority_level": "official_guidance",
+      "source_class": "official_guidance",
+      "edition": "2009",
+      "advisory_only": true,
+      "original_url": "https://www.osha.gov/sites/default/files/publications/osha3192.pdf"
+    },
+    {
+      "source_id": "ftc_advertising_faqs",
+      "source_type": "document",
+      "structured_or_text": "text",
+      "source_name": "Advertising FAQs: A Guide for Small Business",
+      "publisher": "Federal Trade Commission",
+      "jurisdiction": "United States",
+      "authority_level": "official_guidance",
+      "source_class": "official_guidance",
+      "original_url": "https://www.ftc.gov/business-guidance/resources/advertising-faqs-guide-small-business"
+    },
+    {
+      "source_id": "freshretailnet_50k",
+      "source_type": "dataset",
+      "structured_or_text": "structured",
+      "source_name": "FreshRetailNet-50K",
+      "publisher": "Dingdong-Inc",
+      "authority_level": "public_research_dataset",
+      "source_class": "open_license",
+      "licence": "CC BY 4.0",
+      "usage": "pilot analytics and benchmarking",
+      "real_retailer_catalogue": false,
+      "original_url": "https://huggingface.co/datasets/Dingdong-Inc/FreshRetailNet-50K"
+    },
+    {
+      "source_id": "uci_online_retail_ii",
+      "source_type": "dataset",
+      "structured_or_text": "structured",
+      "source_name": "Online Retail II",
+      "publisher": "UCI Machine Learning Repository",
+      "authority_level": "public_research_dataset",
+      "source_class": "open_license",
+      "licence": "CC BY 4.0",
+      "usage": "historical evaluation and demonstration data",
+      "period": "2009-2011",
+      "current_retail_intelligence": false,
+      "original_url": "https://archive.ics.uci.edu/dataset/502/online+retail+ii"
+    }
+  ],
+  "source_policy": {
+    "allowed_source_classes": [
+      "public_domain",
+      "open_license",
+      "official_statute_or_regulation",
+      "official_guidance",
+      "platform_curated_template"
+    ],
+    "precluded_source_classes": [
+      "private_enterprise_data",
+      "confidential_client_data",
+      "copyrighted_commercial_content_without_license",
+      "user_uploaded_project_records",
+      "unknown_license"
+    ],
+    "requires_source_record": true,
+    "requires_license_review": true,
+    "requires_authority_rating": true
+  }
+}

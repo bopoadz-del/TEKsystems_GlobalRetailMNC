@@ -9,6 +9,7 @@ degrades gracefully in environments without Postgres.
 from __future__ import annotations
 
 import os
+os.environ.setdefault("RETAILOPS_EMBED_BACKEND", "hash")
 
 import pytest
 from sqlalchemy import text
@@ -26,6 +27,8 @@ os.environ["RETAILOPS_SKIP_MIGRATIONS"] = "1"
 _TABLES = [
     "messages", "conversations", "action_runs", "document_chunks",
     "documents", "projects", "users", "tenants",
+    "retail_transactions", "retail_promotions", "retail_stock_status",
+    "retail_sales", "retail_products", "retail_pack_sources",
 ]
 
 
@@ -42,10 +45,10 @@ def _db_available() -> bool:
         return False
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def _migrate():
     if not _db_available():
-        pytest.skip("RetailOps test database is not available", allow_module_level=True)
+        pytest.skip("RetailOps test database is not available")
     from app.retailops.db import init_engine, reset_engine
     from app.retailops.migrations_runner import downgrade_to_base, upgrade_to_head
 
@@ -60,7 +63,7 @@ def _migrate():
 
 
 @pytest.fixture()
-def db():
+def db(_migrate):
     from app.retailops.db import session_scope
 
     with session_scope() as session:
@@ -72,7 +75,7 @@ def db():
 
 
 @pytest.fixture()
-def client():
+def client(_migrate):
     from fastapi.testclient import TestClient
 
     from app.retailops.app_factory import create_app
@@ -82,7 +85,7 @@ def client():
 
 @pytest.fixture()
 def loaded_projects(db):
-    """Load the Northstar fixture pack and commit; return {canonical: id}."""
+    """Load the generic demo fixture pack and commit; return {canonical: id}."""
     from app.retailops.db import session_scope
     from app.retailops.fixtures.loader import load_fixtures
 

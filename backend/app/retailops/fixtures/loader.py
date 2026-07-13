@@ -1,7 +1,8 @@
-"""Load the fictional Northstar fixture pack into the operational store.
+"""Load the generic demo fixture pack into the operational store.
 
 Two canonical projects are created and their documents ingested with document
-roles (used by schema-driven context enrichment). All data is fictional.
+roles (used by schema-driven context enrichment). All data is fictional and
+contains no retailer brand names.
 """
 
 from __future__ import annotations
@@ -14,19 +15,17 @@ from sqlalchemy.orm import Session
 from app.retailops import bootstrap
 from app.retailops.ingestion import ingest_document
 
-_HERE = Path(__file__).resolve().parent / "northstar"
+_HERE = Path(__file__).resolve().parent / "demo"
 
-TENANT_ID = "northstar"
-TENANT_NAME = "Northstar Global Retail"
+TENANT_ID = "retail"
+TENANT_NAME = "Retail Demo Tenant"
 
-# Canonical project name -> fixture subdirectory. Stable canonical names let
-# tests resolve generated project IDs by name.
+# Canonical project name -> fixture subdirectory.
 PROJECTS: Dict[str, str] = {
-    "Northstar Riyadh Region": "riyadh",
-    "Northstar Melbourne Region": "melbourne",
+    "Australia Region": "australia",
+    "Global Region": "global",
 }
 
-# Default pilot principals with retail permissions.
 MANAGER_ID = "u_ops_manager"
 VIEWER_ID = "u_viewer"
 
@@ -66,9 +65,6 @@ def load_fixtures(session: Session, tenant_id: str = TENANT_ID) -> Dict[str, str
         )
         project_ids[canonical_name] = project.id
         folder = _HERE / subdir
-        # Skip CSV when an equivalent XLSX exists to avoid duplicate rows; both
-        # are ingested to demonstrate every format, but from different projects
-        # if desired. Here we ingest all files (formats coverage).
         for path in sorted(folder.iterdir()):
             if not path.is_file():
                 continue
@@ -83,6 +79,7 @@ def load_fixtures(session: Session, tenant_id: str = TENANT_ID) -> Dict[str, str
             )
             meta = dict(doc.meta or {})
             meta["doc_role"] = _role_for(path.name)
+            meta["knowledge_layer"] = "tenant_project"
             doc.meta = meta
         session.flush()
     return project_ids

@@ -1,1 +1,1 @@
-"""Fictional RetailOps fixture pack (Northstar Global Retail)."""
+"""Generic RetailOps project fixture pack (no retailer brand names)."""

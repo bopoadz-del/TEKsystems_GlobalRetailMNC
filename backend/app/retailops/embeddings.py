@@ -1,9 +1,8 @@
 """Embedding providers for RetailOps.
 
-Default backend is a deterministic feature-hash embedder: fast, dependency-free,
-and reproducible — ideal for automated tests and offline pilots. An optional
-``fastembed`` backend (ONNX BGE-small) is used when ``RETAILOPS_EMBED_BACKEND=fastembed``.
-Both produce L2-normalized ``EMBED_DIM`` vectors so cosine distance is stable.
+Tests default to a deterministic feature-hash embedder. The live pilot path
+uses ``RETAILOPS_EMBED_BACKEND=fastembed`` (ONNX BGE-small) for real semantic
+vectors. Both target ``EMBED_DIM`` (384) so pgvector columns stay stable.
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ from typing import List, Optional
 from app.retailops.config import EMBED_DIM, RetailOpsConfig, get_config
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
+_provider: Optional["EmbeddingProvider"] = None
 
 
 def _tokenize(text: str) -> List[str]:
@@ -24,6 +24,7 @@ def _tokenize(text: str) -> List[str]:
 
 class EmbeddingProvider:
     dim: int = EMBED_DIM
+    model_name: str = "embedding_provider"
 
     def embed(self, text: str) -> List[float]:  # pragma: no cover - interface
         raise NotImplementedError
@@ -35,6 +36,8 @@ class EmbeddingProvider:
 class HashEmbeddingProvider(EmbeddingProvider):
     """Deterministic feature-hashing embedder with sub-word n-grams."""
 
+    model_name = "hash-v1"
+
     def __init__(self, dim: int = EMBED_DIM) -> None:
         self.dim = dim
 
@@ -45,7 +48,6 @@ class HashEmbeddingProvider(EmbeddingProvider):
             return vec
         for tok in tokens:
             features = [tok]
-            # character trigrams give the hash embedder some fuzziness.
             if len(tok) > 3:
                 features.extend(tok[i : i + 3] for i in range(len(tok) - 2))
             for feat in features:
@@ -62,31 +64,35 @@ class HashEmbeddingProvider(EmbeddingProvider):
 
 
 class FastEmbedProvider(EmbeddingProvider):  # pragma: no cover - optional heavy dep
-    """ONNX BGE-small embedder via fastembed (optional)."""
+    """ONNX BGE-small embedder via fastembed (real semantic path)."""
+
+    model_name = "BAAI/bge-small-en-v1.5"
 
     def __init__(self, dim: int = EMBED_DIM) -> None:
         from fastembed import TextEmbedding
+        import numpy as np
 
-        self._model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+        self._np = np
+        self._model = TextEmbedding(model_name=self.model_name)
         self.dim = dim
 
     def embed(self, text: str) -> List[float]:
         return self.embed_batch([text])[0]
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
-        import numpy as np
-
-        out = []
+        out: List[List[float]] = []
         for arr in self._model.embed(list(texts)):
-            v = np.asarray(arr, dtype="float32")
-            n = float(np.linalg.norm(v))
+            v = self._np.asarray(arr, dtype="float32")
+            if v.shape[0] > self.dim:
+                v = v[: self.dim]
+            elif v.shape[0] < self.dim:
+                pad = self._np.zeros(self.dim - v.shape[0], dtype="float32")
+                v = self._np.concatenate([v, pad])
+            n = float(self._np.linalg.norm(v))
             if n > 0:
                 v = v / n
             out.append(v.tolist())
         return out
-
-
-_provider: Optional[EmbeddingProvider] = None
 
 
 def get_embedder(config: Optional[RetailOpsConfig] = None) -> EmbeddingProvider:
@@ -94,7 +100,8 @@ def get_embedder(config: Optional[RetailOpsConfig] = None) -> EmbeddingProvider:
     if _provider is not None:
         return _provider
     config = config or get_config()
-    if config.embed_backend == "fastembed":
+    backend = (config.embed_backend or "hash").lower()
+    if backend in ("fastembed", "bge", "real"):
         try:
             _provider = FastEmbedProvider(config.embed_dim)
         except Exception:

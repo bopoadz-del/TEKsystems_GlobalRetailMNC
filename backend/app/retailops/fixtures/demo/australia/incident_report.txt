@@ -1,5 +1,5 @@
-Northstar Global Retail — Store Incident Report (Melbourne Region)
-Store: Melbourne CBD
+Store Operations — Store Incident Report (Australia Region)
+Store: Australia Store A
 Date/Time: 2024-06-10 16:40
 
 Incident: A shelving unit in the frozen aisle was found unstable during a routine

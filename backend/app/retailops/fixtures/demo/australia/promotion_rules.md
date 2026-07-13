@@ -1,4 +1,4 @@
-# Northstar Global Retail — Winter Sale 2024 Promotion Rules (Melbourne Region)
+# Store Operations — Winter Sale 2024 Promotion Rules (Australia Region)
 
 Fictional demonstration data.
 

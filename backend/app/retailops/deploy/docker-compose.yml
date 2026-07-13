@@ -24,7 +24,7 @@ services:
       dockerfile: backend/app/retailops/deploy/Dockerfile
     environment:
       RETAILOPS_DATABASE_URL: postgresql+psycopg://retailops:retailops@db:5432/retailops
-      RETAILOPS_EMBED_BACKEND: hash
+      RETAILOPS_EMBED_BACKEND: fastembed
       RETAILOPS_LLM_PROVIDER: fake
       PORT: "8000"
     ports:

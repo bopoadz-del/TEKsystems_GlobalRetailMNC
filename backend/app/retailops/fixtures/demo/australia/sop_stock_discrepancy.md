@@ -1,4 +1,4 @@
-# Northstar SOP: Stock Discrepancy Escalation (Melbourne)
+# Store SOP: Stock Discrepancy Escalation (Australia Store A)
 
 Fictional SOP for demonstration.
 

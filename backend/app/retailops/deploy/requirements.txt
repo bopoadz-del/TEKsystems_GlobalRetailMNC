@@ -1,6 +1,6 @@
 # Lean runtime dependencies for the generated RetailOps container.
-# The default embedding backend is deterministic (no ML deps). Set
-# RETAILOPS_EMBED_BACKEND=fastembed and add fastembed to use ONNX embeddings.
+# Live embeddings: RETAILOPS_EMBED_BACKEND=fastembed (BGE-small ONNX).
+# Tests use RETAILOPS_EMBED_BACKEND=hash.
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 pydantic>=2.9.0
@@ -13,6 +13,9 @@ sqlalchemy>=2.0.30
 psycopg[binary]>=3.1.18
 pgvector>=0.2.5
 alembic>=1.13.0
+
+# Real semantic embeddings (pilot / production default)
+fastembed>=0.4.0
 
 # Orchestration
 langgraph>=0.2.0

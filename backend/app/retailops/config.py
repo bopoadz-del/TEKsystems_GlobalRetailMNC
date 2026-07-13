@@ -26,7 +26,7 @@ def _default_database_url() -> str:
 class RetailOpsConfig:
     database_url: str = field(default_factory=_default_database_url)
     embed_backend: str = field(
-        default_factory=lambda: os.getenv("RETAILOPS_EMBED_BACKEND", "hash")
+        default_factory=lambda: os.getenv("RETAILOPS_EMBED_BACKEND", "fastembed")
     )
     embed_dim: int = EMBED_DIM
 

@@ -55,12 +55,23 @@ Copy a returned project id into the UI (header / Overview paste).
 2. `GET /` → 200 HTML business shell  
 3. `GET /v1/actions` with `X-User-Id` / `X-Tenant-Id` / `X-Project-Id`  
 4. After fixtures: cited `/v1/ask`, three retail actions, audit list  
-5. Riyadh project cannot retrieve Melbourne evidence  
+5. Australia project cannot retrieve Global-only supplier evidence  
 
 ## Two-minute demo
 
 1. Open https://retailops-3ayp.onrender.com/  
-2. Paste Riyadh project id  
+2. Paste Australia or Global project id  
 3. Assistant: stock discrepancy escalation → citations  
 4. Actions: inventory risk → success; empty project → `dependency_required`  
 5. Audit: persisted runs with status/duration/evidence count  
+
+
+## retail_core_open_v1 on Render
+
+After deploy, one-off job:
+
+```bash
+python -m app.retailops.packs.load_retail_core_open_v1 --profile mini
+```
+
+Inspect: `GET /v1/packs/retail_core_open_v1`
