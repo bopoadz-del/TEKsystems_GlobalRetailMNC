@@ -30,6 +30,13 @@ CHUNK_OVERLAP = 120
 
 def ensure_platform_project(session: Session) -> str:
     bootstrap.ensure_tenant(session, PLATFORM_TENANT_ID, "Platform Prebuilt Knowledge")
+    bootstrap.ensure_user(
+        session,
+        "u_platform",
+        PLATFORM_TENANT_ID,
+        name="Platform Reader",
+        permissions=["retail:read", "retail:analyse"],
+    )
     project = bootstrap.ensure_project(
         session,
         tenant_id=PLATFORM_TENANT_ID,
