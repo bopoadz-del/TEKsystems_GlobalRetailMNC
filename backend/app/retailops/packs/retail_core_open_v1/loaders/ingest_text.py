@@ -114,7 +114,24 @@ def ingest_text_source(
         raise ValueError(f"not a text source: {source_id}")
 
     project_id = ensure_platform_project(session)
-    acq = acquire_source(source_id, fixture_path=fixture_path, force=force)
+
+    # Prefer committed mini text fixtures for reproducible pilots; network is optional.
+    if fixture_path is None:
+        mini = Path(__file__).resolve().parents[1] / "fixtures_min" / "text"
+        for ext in (".txt", ".md", ".html", ".pdf"):
+            candidate = mini / f"{source_id}{ext}"
+            if candidate.exists():
+                fixture_path = candidate
+                break
+
+    try:
+        acq = acquire_source(source_id, fixture_path=fixture_path, force=force)
+    except Exception as exc:
+        if fixture_path is None:
+            raise
+        # Network failure after empty fixture discovery — re-raise.
+        raise RuntimeError(f"acquire failed for {source_id}: {exc}") from exc
+
     path = Path(acq["path"])
     data = path.read_bytes()
     checksum = acq["content_checksum"]
