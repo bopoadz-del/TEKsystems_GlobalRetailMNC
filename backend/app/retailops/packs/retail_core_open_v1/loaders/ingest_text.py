@@ -136,14 +136,18 @@ def ingest_text_source(
     data = path.read_bytes()
     checksum = acq["content_checksum"]
 
-    # Infer filename for parser.
-    url = acq.get("resolved_download_url") or ""
-    if source_id.startswith("fda") or "pdf" in (acq.get("content_type") or "") or url.endswith(".pdf"):
-        filename = f"{source_id}.pdf"
-    elif source_id.startswith("osha"):
-        filename = f"{source_id}.pdf"
+    # Infer filename for parser from fixture/original suffix.
+    if fixture_path is not None:
+        filename = f"{source_id}{fixture_path.suffix or '.txt'}"
     else:
-        filename = f"{source_id}.html"
+        url = acq.get("resolved_download_url") or ""
+        ctype = acq.get("content_type") or ""
+        if "pdf" in ctype or url.lower().endswith(".pdf"):
+            filename = f"{source_id}.pdf"
+        elif "html" in ctype or url.lower().endswith((".html", ".htm")):
+            filename = f"{source_id}.html"
+        else:
+            filename = f"{source_id}.txt"
 
     # Normalize HTML to text units + section chunks.
     if filename.endswith(".html") or b"<html" in data[:500].lower():
