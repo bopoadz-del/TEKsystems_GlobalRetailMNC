@@ -4,8 +4,8 @@
 
 | Resource | Name | Notes |
 |----------|------|--------|
-| Web | `retailops` | Docker, health `/health` |
-| DB | `retailops-db` | Postgres 16 (+ pgvector extension on first migrate) |
+| Web | `retailops` (`srv-d9al9l0458ps73cb4hag`) | Docker, health `/health` |
+| DB | `retailops-db` (`dpg-d9al9im7r5hc73eea510-a`) | Postgres 16 (+ pgvector on first migrate) |
 | URL | https://retailops-3ayp.onrender.com | Auto-deploy from `main` |
 
 Blueprint source: root [`render.yaml`](render.yaml) (mirrors
@@ -24,18 +24,40 @@ Never commit API keys. Prefer dashboard/secret injection.
 
 ## Redeploy
 
-After merging to `main`:
+After merging to `main`, auto-deploy should fire. Force if needed:
 
 ```bash
-# auto-deploy should fire; or force:
-# render deploys create srv-d9al9l0458ps73cb4hag --wait
+# Dashboard → Manual Deploy, or:
+curl -sS -X POST \
+  -H "Authorization: Bearer $RENDER_API_KEY" \
+  -H "Accept: application/json" \
+  "https://api.render.com/v1/services/srv-d9al9l0458ps73cb4hag/deploys" \
+  -d '{"clearCache":"do_not_clear"}'
+
 curl -sS https://retailops-3ayp.onrender.com/health
 curl -sS -o /dev/null -w '%{http_code}\n' https://retailops-3ayp.onrender.com/
 ```
 
+Expect `/health` with `kit_snapshot: local-retail-kit-1.1.0` and `/` → `200` HTML
+(`title: CEREBRUM RetailOps`).
+
 ## Fixture load on Render
 
-One-off shell / SSH (or temporary job) with the service’s `RETAILOPS_DATABASE_URL`:
+Prefer a **one-off job** (SSH is interactive-only in CLI). Keep the Python
+payload on a single logical `-c` string (embedded newlines are fine; do not
+leave statements after a truncated `init_engine()` call).
+
+```bash
+# Example: Render Jobs API
+curl -sS -X POST \
+  -H "Authorization: Bearer $RENDER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  "https://api.render.com/v1/services/srv-d9al9l0458ps73cb4hag/jobs" \
+  -d '{"startCommand":"python -c '\''from app.retailops.db import init_engine, session_scope\nfrom app.retailops.fixtures.loader import load_fixtures\ninit_engine()\nwith session_scope() as s:\n    print(load_fixtures(s))'\''"}'
+```
+
+Or from an SSH session / ephemeral shell with `RETAILOPS_DATABASE_URL` set:
 
 ```bash
 python -c "
@@ -47,20 +69,22 @@ with session_scope() as s:
 "
 ```
 
-Copy a returned project id into the UI (header / Overview paste).
+Copy a returned project id (Riyadh / Melbourne) into the UI header.
 
 ## Smoke checklist
 
+Verified against live after the hardened `main` redeploy:
+
 1. `GET /health` → `status:ok`, `database:ok`, `kit_snapshot` present  
-2. `GET /` → 200 HTML business shell  
-3. `GET /v1/actions` with `X-User-Id` / `X-Tenant-Id` / `X-Project-Id`  
-4. After fixtures: cited `/v1/ask`, three retail actions, audit list  
-5. Riyadh project cannot retrieve Melbourne evidence  
+2. `GET /` → 200 HTML business shell (+ `/assets/*.js` / `.css` 200)  
+3. `GET /v1/overview`, `GET /v1/actions` with `X-User-Id` / `X-Tenant-Id` / `X-Project-Id`  
+4. After fixtures: cited `/v1/ask`; three retail actions succeed; empty project → `dependency_required`  
+5. Melbourne project citations stay Melbourne-scoped (no Riyadh filenames)
 
 ## Two-minute demo
 
 1. Open https://retailops-3ayp.onrender.com/  
-2. Paste Riyadh project id  
+2. Paste Riyadh project id from fixture load  
 3. Assistant: stock discrepancy escalation → citations  
-4. Actions: inventory risk → success; empty project → `dependency_required`  
+4. Actions: inventory risk → success; unknown/empty project → `dependency_required`  
 5. Audit: persisted runs with status/duration/evidence count  
