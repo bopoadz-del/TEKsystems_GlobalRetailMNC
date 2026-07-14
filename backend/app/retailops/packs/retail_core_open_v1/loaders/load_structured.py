@@ -74,22 +74,43 @@ def select_fresh_pilot_stores(store_ids: Sequence[int], limit: int = PILOT_STORE
 def _rows_from_fresh_parquet(
     train_path: Path, *, store_limit: int
 ) -> Tuple[List[Dict[str, Any]], List[int], Dict[str, Any]]:
-    """Filter FreshRetailNet train parquet to the pilot store subset."""
+    """Filter FreshRetailNet train parquet to the pilot store subset (memory-safe)."""
     import pyarrow as pa
     import pyarrow.compute as pc
+    import pyarrow.dataset as ds
     import pyarrow.parquet as pq
 
-    table = pq.read_table(train_path)
-    store_col = table.column("store_id")
+    # Read only store_id to pick the N smallest ids without loading hourly arrays.
+    store_col = pq.read_table(train_path, columns=["store_id"]).column("store_id")
     all_stores = sorted(pc.unique(store_col).to_pylist())
     allowed = select_fresh_pilot_stores(all_stores, limit=store_limit)
-    mask = pc.is_in(store_col, value_set=pa.array(allowed))
-    sub = table.filter(mask)
-    keep = [c for c in sub.column_names if c not in ("hours_sale", "hours_stock_status")]
-    sub = sub.select(keep)
-    rows = sub.to_pylist()
+    keep = [
+        "city_id",
+        "store_id",
+        "management_group_id",
+        "first_category_id",
+        "second_category_id",
+        "third_category_id",
+        "product_id",
+        "dt",
+        "sale_amount",
+        "stock_hour6_22_cnt",
+        "discount",
+        "holiday_flag",
+        "activity_flag",
+        "precpt",
+        "avg_temperature",
+        "avg_humidity",
+        "avg_wind_level",
+    ]
+    dataset = ds.dataset(str(train_path), format="parquet")
+    table = dataset.to_table(
+        columns=keep,
+        filter=pc.field("store_id").isin(allowed),
+    )
+    rows = table.to_pylist()
     meta = {
-        "parquet_rows_total": table.num_rows,
+        "parquet_rows_total": pq.ParquetFile(train_path).metadata.num_rows,
         "parquet_rows_subset": len(rows),
         "parquet_stores_total": len(all_stores),
         "train_parquet": str(train_path),
