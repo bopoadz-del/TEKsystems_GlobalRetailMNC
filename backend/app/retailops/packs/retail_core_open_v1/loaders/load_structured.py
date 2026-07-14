@@ -75,15 +75,15 @@ def _rows_from_fresh_parquet(
     train_path: Path, *, store_limit: int
 ) -> Tuple[List[Dict[str, Any]], List[int], Dict[str, Any]]:
     """Filter FreshRetailNet train parquet to the pilot store subset (memory-safe)."""
-    import pyarrow as pa
     import pyarrow.compute as pc
     import pyarrow.dataset as ds
     import pyarrow.parquet as pq
 
-    # Read only store_id to pick the N smallest ids without loading hourly arrays.
-    store_col = pq.read_table(train_path, columns=["store_id"]).column("store_id")
-    all_stores = sorted(pc.unique(store_col).to_pylist())
-    allowed = select_fresh_pilot_stores(all_stores, limit=store_limit)
+    # FreshRetailNet-50K store_ids are contiguous from 0..N-1; the N smallest
+    # are therefore range(N). Avoid loading 4.5M store_id values just to sort.
+    pf = pq.ParquetFile(train_path)
+    total_rows = pf.metadata.num_rows
+    allowed = list(range(store_limit))
     keep = [
         "city_id",
         "store_id",
@@ -110,9 +110,10 @@ def _rows_from_fresh_parquet(
     )
     rows = table.to_pylist()
     meta = {
-        "parquet_rows_total": pq.ParquetFile(train_path).metadata.num_rows,
+        "parquet_rows_total": total_rows,
         "parquet_rows_subset": len(rows),
-        "parquet_stores_total": len(all_stores),
+        "parquet_stores_total": None,
+        "store_id_rule": f"contiguous_smallest_{store_limit}",
         "train_parquet": str(train_path),
     }
     return rows, allowed, meta
