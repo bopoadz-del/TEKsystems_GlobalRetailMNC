@@ -28,8 +28,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--only",
         default="all",
-        choices=["all", "text", "structured", "summaries"],
-        help="Run a subset (text=BGE RAG ingest; structured=SQL; summaries=controlled RAG)",
+        choices=["all", "text", "structured", "fresh", "uci", "summaries"],
+        help="Run a subset (text=BGE RAG ingest; structured/fresh/uci=SQL; summaries=controlled RAG)",
     )
     parser.add_argument("--skip-migrations", action="store_true")
     parser.add_argument(
@@ -54,7 +54,8 @@ def main(argv: list[str] | None = None) -> int:
     acquire_uci = args.acquire_uci or full
     acquire_fresh = args.acquire_fresh or full
     do_text = args.only in ("all", "text")
-    do_structured = args.only in ("all", "structured")
+    do_fresh = args.only in ("all", "structured", "fresh")
+    do_uci = args.only in ("all", "structured", "uci")
     do_summaries = args.only in ("all", "summaries")
 
     if not args.skip_migrations:
@@ -96,13 +97,15 @@ def main(argv: list[str] | None = None) -> int:
                 force=args.force_text or full,
                 prefer_network=prefer_network,
             )
-    if do_structured:
+    if do_fresh:
         with session_scope() as session:
             report["freshretailnet"] = load_freshretailnet(
                 session,
                 use_mini_fixture=not acquire_fresh,
                 acquire=acquire_fresh,
             )
+    if do_uci:
+        with session_scope() as session:
             report["uci"] = load_uci_online_retail_ii(
                 session,
                 use_mini_fixture=not acquire_uci,
