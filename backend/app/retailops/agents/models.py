@@ -83,6 +83,55 @@ class FailurePolicy(_DeterministicModel):
     on_low_confidence: Literal["disclose_only", "block", "handoff"] = "disclose_only"
 
 
+class PlaybookFormula(_DeterministicModel):
+    """Named discipline formula — declarative; optional runtime binding."""
+
+    id: str
+    name: str
+    expression: str
+    inputs: List[str] = Field(default_factory=list)
+    outputs: List[str] = Field(default_factory=list)
+    implemented_by: Optional[str] = None
+    unit: Optional[str] = None
+    notes: str = ""
+
+
+class PlaybookStandard(_DeterministicModel):
+    """Policy / regulatory / KPI standard the hat must respect."""
+
+    id: str
+    name: str
+    kind: Literal["policy", "regulatory", "internal", "kpi", "safety"] = "internal"
+    ref: str = ""
+    must_cite: bool = True
+    description: str = ""
+
+
+class PlaybookProcedureStep(_DeterministicModel):
+    step: int
+    action: str
+    requires_confirmation: bool = False
+
+
+class PlaybookProcedure(_DeterministicModel):
+    """Ordered operating procedure for the discipline."""
+
+    id: str
+    name: str
+    steps: List[PlaybookProcedureStep] = Field(default_factory=list)
+    trigger: str = ""
+    handoff_to: Optional[str] = None
+    requires_confirmation: bool = False
+
+
+class DisciplinePlaybook(_DeterministicModel):
+    """Per-hat formulas, standards, and procedures (catalog-ready)."""
+
+    formulas: List[PlaybookFormula] = Field(default_factory=list)
+    standards: List[PlaybookStandard] = Field(default_factory=list)
+    procedures: List[PlaybookProcedure] = Field(default_factory=list)
+
+
 class CatalogMeta(_DeterministicModel):
     vendor_neutral: bool = True
     product: str = "TEKsystems RetailOps"
@@ -107,6 +156,7 @@ class AgentManifest(_DeterministicModel):
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     verification: VerificationConfig = Field(default_factory=VerificationConfig)
     failure_policy: FailurePolicy = Field(default_factory=FailurePolicy)
+    playbook: DisciplinePlaybook = Field(default_factory=DisciplinePlaybook)
     permissions: List[str] = Field(default_factory=list)
     catalog: CatalogMeta = Field(default_factory=CatalogMeta)
 
@@ -124,6 +174,28 @@ class AgentManifest(_DeterministicModel):
             raise ValueError(f"hat '{self.agent_id}' must declare extends=base agent_id")
         if self.kind == "base" and self.extends:
             raise ValueError(f"base '{self.agent_id}' must not declare extends")
+        # Hats that claim a playbook must declare all three dimensions.
+        if self.kind == "hat":
+            pb = self.playbook
+            if not (pb.formulas and pb.standards and pb.procedures):
+                raise ValueError(
+                    f"hat '{self.agent_id}' playbook must include formulas, "
+                    "standards, and procedures"
+                )
+
+
+def _merge_by_id(base_items: List[Dict[str, Any]], hat_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Hat entries override base entries with the same id; preserve order."""
+    out: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+    for item in base_items + hat_items:
+        iid = item.get("id")
+        if not iid:
+            continue
+        if iid not in out:
+            order.append(iid)
+        out[iid] = item
+    return [out[i] for i in order]
 
 
 def merged_public_dict(base: AgentManifest, hat: AgentManifest) -> Dict[str, Any]:
@@ -134,6 +206,8 @@ def merged_public_dict(base: AgentManifest, hat: AgentManifest) -> Dict[str, Any
         raise ValueError(f"hat {hat.agent_id} does not extend {base.agent_id}")
     data = base.to_dict()
     hat_data = hat.to_dict()
+    base_pb = data.get("playbook") or {}
+    hat_pb = hat_data.get("playbook") or {}
     data.update(
         {
             "agent_id": hat.agent_id,
@@ -152,6 +226,20 @@ def merged_public_dict(base: AgentManifest, hat: AgentManifest) -> Dict[str, Any
             "memory": hat_data["memory"],
             "verification": hat_data["verification"],
             "failure_policy": hat_data["failure_policy"],
+            "playbook": {
+                "formulas": _merge_by_id(
+                    list(base_pb.get("formulas") or []),
+                    list(hat_pb.get("formulas") or []),
+                ),
+                "standards": _merge_by_id(
+                    list(base_pb.get("standards") or []),
+                    list(hat_pb.get("standards") or []),
+                ),
+                "procedures": _merge_by_id(
+                    list(base_pb.get("procedures") or []),
+                    list(hat_pb.get("procedures") or []),
+                ),
+            },
             "permissions": sorted(set(base.permissions) | set(hat.permissions)),
             "catalog": hat_data["catalog"] or data["catalog"],
             "composed_from": [base.agent_id, hat.agent_id],

@@ -139,3 +139,42 @@ def test_memory_save_requires_confirmation_on_teachable_hats():
         assert hat.memory.save
         assert all(rule.requires_confirmation for rule in hat.memory.save)
         assert "unverified_claims" in hat.memory.never_persist or "secrets" in hat.memory.never_persist
+
+
+def test_every_hat_has_formulas_standards_procedures():
+    catalog = get_agent_catalog()
+    for hat in catalog.hats():
+        pb = hat.playbook
+        assert pb.formulas, f"{hat.agent_id} missing formulas"
+        assert pb.standards, f"{hat.agent_id} missing standards"
+        assert pb.procedures, f"{hat.agent_id} missing procedures"
+        for proc in pb.procedures:
+            assert proc.steps, f"{hat.agent_id}.{proc.id} has empty steps"
+            assert [s.step for s in proc.steps] == list(range(1, len(proc.steps) + 1))
+
+
+def test_compose_inherits_base_playbook_formulas():
+    catalog = get_agent_catalog()
+    composed = catalog.compose("retail.hat.inventory")
+    ids = {f["id"] for f in composed["playbook"]["formulas"]}
+    assert "base.grounding_gate" in ids
+    assert "inventory.recommended_reorder_point" in ids
+
+
+def test_reasoner_emits_playbook_refs_for_roster():
+    reasoner = RetailOperationsReasoner()
+    plan = reasoner.reason(
+        question="What is the staffing gap on tonight's roster?",
+        registry=build_registry(),
+        context=_ctx(),
+    )
+    assert plan.playbook_refs.get("agent_id") == "retail.hat.workforce_roster"
+    assert "roster.coverage_ratio" in plan.playbook_refs.get("formula_ids", [])
+    assert plan.playbook_refs.get("procedure_count", 0) >= 1
+
+
+def test_playbook_formula_ids_unique_within_hat():
+    catalog = get_agent_catalog()
+    for agent in catalog.all():
+        ids = [f.id for f in agent.playbook.formulas]
+        assert len(ids) == len(set(ids)), f"duplicate formula ids in {agent.agent_id}"

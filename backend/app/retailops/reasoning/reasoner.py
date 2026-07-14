@@ -303,15 +303,35 @@ class RetailOperationsReasoner:
         active_ids = [h.agent_id for h in active]
         primary = self._select_primary_hat(question, intent, active_ids)
         handoffs: List[Dict[str, Any]] = []
+        playbook_refs: Dict[str, Any] = {}
         if primary:
             handoffs = catalog.recommend_handoffs(
                 primary,
                 related_domains=list(plan.related_domains or []),
                 include_all=True,
             )
+            hat = catalog.get(primary)
+            if hat is not None:
+                pb = hat.playbook
+                playbook_refs = {
+                    "agent_id": primary,
+                    "formula_ids": [f.id for f in pb.formulas],
+                    "standard_ids": [s.id for s in pb.standards],
+                    "procedure_ids": [p.id for p in pb.procedures],
+                    "formula_count": len(pb.formulas),
+                    "standard_count": len(pb.standards),
+                    "procedure_count": len(pb.procedures),
+                }
         notes = list(plan.notes or [])
         if primary:
             notes.append(f"discipline_hat:{primary}")
+        if playbook_refs:
+            notes.append(
+                "playbook:"
+                f"{playbook_refs['formula_count']}F/"
+                f"{playbook_refs['standard_count']}S/"
+                f"{playbook_refs['procedure_count']}P"
+            )
         if disabled:
             notes.append(f"agents_put_off:{','.join(sorted(disabled))}")
         return plan.model_copy(
@@ -319,6 +339,7 @@ class RetailOperationsReasoner:
                 "active_agent_ids": active_ids,
                 "primary_agent_id": primary,
                 "handoff_tips": handoffs,
+                "playbook_refs": playbook_refs,
                 "notes": notes,
             }
         )

@@ -16,7 +16,8 @@
     "handoffs",
     "verification",
     "failure_policy",
-    "memory"
+    "memory",
+    "playbook"
   ],
   "properties": {
     "manifest_version": { "type": "string", "const": "1.0.0" },
@@ -188,6 +189,83 @@
         "on_low_confidence": {
           "type": "string",
           "enum": ["disclose_only", "block", "handoff"]
+        }
+      }
+    },
+    "playbook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["formulas", "standards", "procedures"],
+      "description": "Discipline formulas, standards, and operating procedures owned by this agent/hat.",
+      "properties": {
+        "formulas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "expression"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 },
+              "expression": { "type": "string", "minLength": 1 },
+              "inputs": { "type": "array", "items": { "type": "string" } },
+              "outputs": { "type": "array", "items": { "type": "string" } },
+              "implemented_by": {
+                "type": ["string", "null"],
+                "description": "Action id, learning module id, or null when advisory-only"
+              },
+              "unit": { "type": ["string", "null"] },
+              "notes": { "type": "string" }
+            }
+          }
+        },
+        "standards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "kind"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "kind": {
+                "type": "string",
+                "enum": ["policy", "regulatory", "internal", "kpi", "safety"]
+              },
+              "ref": { "type": "string" },
+              "must_cite": { "type": "boolean", "default": true },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "procedures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "steps"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "trigger": { "type": "string" },
+              "handoff_to": { "type": ["string", "null"] },
+              "requires_confirmation": { "type": "boolean", "default": false },
+              "steps": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["step", "action"],
+                  "properties": {
+                    "step": { "type": "integer", "minimum": 1 },
+                    "action": { "type": "string", "minLength": 1 },
+                    "requires_confirmation": { "type": "boolean", "default": false }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },

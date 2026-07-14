@@ -122,5 +122,88 @@
       "service",
       "guest"
     ]
+  },
+  "playbook": {
+    "formulas": [
+      {
+        "id": "cx.complaint_rate",
+        "name": "Complaint rate",
+        "expression": "complaint_rate = complaint_count / max(transaction_count, epsilon)",
+        "inputs": [
+          "complaint_count",
+          "transaction_count"
+        ],
+        "outputs": [
+          "complaint_rate"
+        ],
+        "implemented_by": null,
+        "unit": "ratio",
+        "notes": "Aggregate only \u2014 never invent guest identities."
+      },
+      {
+        "id": "cx.queue_wait_index",
+        "name": "Queue wait index",
+        "expression": "queue_wait_index = observed_wait_minutes / max(target_wait_minutes, epsilon)",
+        "inputs": [
+          "observed_wait_minutes",
+          "target_wait_minutes"
+        ],
+        "outputs": [
+          "queue_wait_index"
+        ],
+        "implemented_by": null,
+        "unit": null,
+        "notes": "Requires evidenced wait metrics; otherwise ask clarifying."
+      }
+    ],
+    "standards": [
+      {
+        "id": "cx.no_guest_pii",
+        "name": "No guest PII",
+        "kind": "policy",
+        "ref": "",
+        "must_cite": true,
+        "description": "Diagnose themes and coverage, never fabricate customer identities."
+      },
+      {
+        "id": "cx.evidence_or_clarify",
+        "name": "Evidence or clarify",
+        "kind": "internal",
+        "ref": "",
+        "must_cite": true,
+        "description": "If complaint/queue evidence is missing, ask clarifying rather than invent KPIs."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "cx.service_failure_triage",
+        "name": "Service failure triage",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Identify theme (queue, floor condition, campaign promise) without PII",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "If coverage-driven, hand off to workforce roster",
+            "requires_confirmation": true
+          },
+          {
+            "step": 3,
+            "action": "If floor/incident-driven, hand off to store operations",
+            "requires_confirmation": false
+          },
+          {
+            "step": 4,
+            "action": "If campaign promise mismatch, hand off to marketing",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "complaint, NPS, queue, service level",
+        "handoff_to": "retail.hat.workforce_roster",
+        "requires_confirmation": false
+      }
+    ]
   }
 }

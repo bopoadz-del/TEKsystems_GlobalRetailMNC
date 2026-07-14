@@ -10,30 +10,58 @@
     "mode": "hybrid",
     "default_enabled": true,
     "triggers": [
-      { "type": "intent", "value": "reporting" },
-      { "type": "keyword", "value": "margin" },
-      { "type": "keyword", "value": "shrink" },
-      { "type": "keyword", "value": "p&l" },
-      { "type": "keyword", "value": "accounting" },
-      { "type": "keyword", "value": "gross profit" }
+      {
+        "type": "intent",
+        "value": "reporting"
+      },
+      {
+        "type": "keyword",
+        "value": "margin"
+      },
+      {
+        "type": "keyword",
+        "value": "shrink"
+      },
+      {
+        "type": "keyword",
+        "value": "p&l"
+      },
+      {
+        "type": "keyword",
+        "value": "accounting"
+      },
+      {
+        "type": "keyword",
+        "value": "gross profit"
+      }
     ],
-    "put_off_by": ["disable:accounting", "disable:retail.hat.accounting"]
+    "put_off_by": [
+      "disable:accounting",
+      "disable:retail.hat.accounting"
+    ]
   },
   "context_sources": [
     {
       "source_id": "finance_docs",
       "kind": "project_documents",
-      "doc_roles": ["document", "policy"],
+      "doc_roles": [
+        "document",
+        "policy"
+      ],
       "description": "Cost sheets, margin notes, shrink reports"
     },
     {
       "source_id": "promo_learning",
       "kind": "learning_profiles",
-      "modules": ["promotion_effectiveness"],
+      "modules": [
+        "promotion_effectiveness"
+      ],
       "description": "Verified promo margin uplift/erosion"
     }
   ],
-  "allowed_paths": ["fixtures/northstar/**"],
+  "allowed_paths": [
+    "fixtures/northstar/**"
+  ],
   "allowed_actions": [
     "retail.generate_operations_brief",
     "retail.get_learning_summary"
@@ -42,13 +70,20 @@
     {
       "to_agent_id": "retail.hat.marketing",
       "when": "margin erosion attributed to campaign mechanics",
-      "carry": ["campaign", "margin_change"],
+      "carry": [
+        "campaign",
+        "margin_change"
+      ],
       "requires_confirmation": false
     },
     {
       "to_agent_id": "retail.hat.inventory",
       "when": "shrink driven by inventory discrepancy",
-      "carry": ["store", "sku", "variance"],
+      "carry": [
+        "store",
+        "sku",
+        "variance"
+      ],
       "requires_confirmation": false
     }
   ],
@@ -61,23 +96,160 @@
         "requires_confirmation": true
       }
     ],
-    "never_persist": ["llm_raw_text", "secrets", "card_data", "unverified_claims"]
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "card_data",
+      "unverified_claims"
+    ]
   },
   "verification": {
     "grounding": "documents_or_learning_only",
     "cite_required": true,
     "refuse_unaided_figures": true,
-    "checks": ["no_unaided_currency_amounts"]
+    "checks": [
+      "no_unaided_currency_amounts"
+    ]
   },
   "failure_policy": {
     "on_missing_context": "dependency_required",
     "on_unregistered_action": "unsupported",
     "on_low_confidence": "disclose_only"
   },
-  "permissions": ["retail:read", "retail:analyse"],
+  "permissions": [
+    "retail:read",
+    "retail:analyse"
+  ],
   "catalog": {
     "vendor_neutral": true,
     "product": "TEKsystems RetailOps",
-    "tags": ["hat", "accounting", "margin", "shrink"]
+    "tags": [
+      "hat",
+      "accounting",
+      "margin",
+      "shrink"
+    ]
+  },
+  "playbook": {
+    "formulas": [
+      {
+        "id": "accounting.gross_margin",
+        "name": "Gross margin",
+        "expression": "gross_margin = (revenue - cogs) / max(revenue, epsilon)",
+        "inputs": [
+          "revenue",
+          "cogs"
+        ],
+        "outputs": [
+          "gross_margin"
+        ],
+        "implemented_by": null,
+        "unit": "ratio",
+        "notes": "Refuse if revenue/cogs not evidenced in documents or structured rows."
+      },
+      {
+        "id": "accounting.shrink_value",
+        "name": "Shrink value",
+        "expression": "shrink_value = unit_cost * shrink_units",
+        "inputs": [
+          "unit_cost",
+          "shrink_units"
+        ],
+        "outputs": [
+          "shrink_value"
+        ],
+        "implemented_by": null,
+        "unit": "currency",
+        "notes": "Requires documented unit cost; never invent currency amounts."
+      },
+      {
+        "id": "accounting.promo_margin_delta",
+        "name": "Promo margin delta",
+        "expression": "margin_change = mean(promoted_margin - baseline_margin)",
+        "inputs": [
+          "baseline_margin",
+          "promoted_margin"
+        ],
+        "outputs": [
+          "margin_change"
+        ],
+        "implemented_by": "learning.promotion_effectiveness",
+        "unit": null,
+        "notes": ""
+      }
+    ],
+    "standards": [
+      {
+        "id": "accounting.no_unaided_currency",
+        "name": "No unaided currency amounts",
+        "kind": "policy",
+        "ref": "",
+        "must_cite": true,
+        "description": "Every currency figure must cite a document, ledger export, or verified learning metric."
+      },
+      {
+        "id": "accounting.cost_override_confirm",
+        "name": "Cost override confirmation",
+        "kind": "internal",
+        "ref": "",
+        "must_cite": true,
+        "description": "Cost centre / unit cost overrides require explicit confirmation before memory save."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "accounting.margin_review",
+        "name": "Margin / shrink review",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Locate cost/margin/shrink evidence in project documents",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Compute only from cited figures",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "Disclose assumptions and confidence",
+            "requires_confirmation": false
+          },
+          {
+            "step": 4,
+            "action": "Hand off inventory discrepancy or campaign mechanics if root cause is external",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "margin, shrink, or P&L question",
+        "handoff_to": null,
+        "requires_confirmation": false
+      },
+      {
+        "id": "accounting.cost_override",
+        "name": "Confirm cost override",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Present proposed unit cost / mapping with source",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Obtain manager confirmation",
+            "requires_confirmation": true
+          },
+          {
+            "step": 3,
+            "action": "Save confirmed_cost_override to memory",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "manager requests cost override",
+        "handoff_to": null,
+        "requires_confirmation": true
+      }
+    ]
   }
 }

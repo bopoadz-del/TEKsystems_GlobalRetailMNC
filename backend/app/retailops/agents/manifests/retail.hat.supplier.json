@@ -129,5 +129,124 @@
       "merchandising",
       "fulfillment"
     ]
+  },
+  "playbook": {
+    "formulas": [
+      {
+        "id": "supplier.otif",
+        "name": "On-time in-full rate",
+        "expression": "otif_pct = count(on_time AND in_full) / sample_count",
+        "inputs": [
+          "on_time_flags",
+          "in_full_flags",
+          "sample_count"
+        ],
+        "outputs": [
+          "otif_percentage"
+        ],
+        "implemented_by": "learning.supplier_fulfilment",
+        "unit": "ratio",
+        "notes": ""
+      },
+      {
+        "id": "supplier.fill_rate",
+        "name": "Fill rate",
+        "expression": "fill_rate = received_units / max(ordered_units, epsilon)",
+        "inputs": [
+          "received_units",
+          "ordered_units"
+        ],
+        "outputs": [
+          "fill_rate"
+        ],
+        "implemented_by": "learning.supplier_fulfilment",
+        "unit": "ratio",
+        "notes": ""
+      },
+      {
+        "id": "supplier.reliability_class",
+        "name": "Supplier reliability class",
+        "expression": "reliable if on_time>=0.9 and otif>=0.85 and fill_rate>=0.95; watch if on_time>=0.75 and otif>=0.7 and fill_rate>=0.85; else at_risk",
+        "inputs": [
+          "on_time_pct",
+          "otif_pct",
+          "fill_rate"
+        ],
+        "outputs": [
+          "reliability_classification"
+        ],
+        "implemented_by": "learning.supplier_fulfilment",
+        "unit": null,
+        "notes": ""
+      }
+    ],
+    "standards": [
+      {
+        "id": "supplier.signal_before_override",
+        "name": "Supplier signal before lead-time override",
+        "kind": "internal",
+        "ref": "",
+        "must_cite": true,
+        "description": "Lead-time overrides require fulfillment evidence plus confirmation."
+      },
+      {
+        "id": "supplier.learning_advisory",
+        "name": "Supplier learning advisory",
+        "kind": "kpi",
+        "ref": "",
+        "must_cite": true,
+        "description": "Reliability profiles are advisory until an inventory action applies them."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "supplier.reliability_review",
+        "name": "Supplier reliability review",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Pull supplier_fulfilment learning profiles and notices",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Report OTIF, fill rate, reliability class with confidence",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "If reliability affects ROP/safety stock, hand off to inventory",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "supplier, OTIF, or lead-time question",
+        "handoff_to": "retail.hat.inventory",
+        "requires_confirmation": false
+      },
+      {
+        "id": "supplier.lead_time_override",
+        "name": "Confirm lead-time override",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Show current vs proposed lead time with evidence",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Obtain confirmation",
+            "requires_confirmation": true
+          },
+          {
+            "step": 3,
+            "action": "Save confirmed_lead_time_override",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "manager overrides supplier lead time",
+        "handoff_to": null,
+        "requires_confirmation": true
+      }
+    ]
   }
 }

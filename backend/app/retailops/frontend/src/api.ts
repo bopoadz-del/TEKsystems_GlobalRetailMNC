@@ -87,6 +87,34 @@ export interface AgentManifest {
   memory?: Record<string, unknown>;
   verification?: Record<string, unknown>;
   failure_policy?: Record<string, unknown>;
+  playbook?: {
+    formulas?: {
+      id: string;
+      name: string;
+      expression: string;
+      inputs?: string[];
+      outputs?: string[];
+      implemented_by?: string | null;
+      unit?: string | null;
+      notes?: string;
+    }[];
+    standards?: {
+      id: string;
+      name: string;
+      kind: string;
+      ref?: string;
+      must_cite?: boolean;
+      description?: string;
+    }[];
+    procedures?: {
+      id: string;
+      name: string;
+      trigger?: string;
+      handoff_to?: string | null;
+      requires_confirmation?: boolean;
+      steps?: { step: number; action: string; requires_confirmation?: boolean }[];
+    }[];
+  };
   allowed_actions?: string[];
   composed_from?: string[];
   [key: string]: unknown;

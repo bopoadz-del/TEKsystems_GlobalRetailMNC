@@ -30,6 +30,7 @@ class RetailExecutionPlan(_DeterministicModel):
     active_agent_ids: List[str] = Field(default_factory=list)
     primary_agent_id: Optional[str] = None
     handoff_tips: List[Dict[str, Any]] = Field(default_factory=list)
+    playbook_refs: Dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("confidence")
     @classmethod

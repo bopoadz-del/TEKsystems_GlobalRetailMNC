@@ -5,54 +5,99 @@
   "display_name": "Workforce Roster Hat",
   "discipline": "workforce_roster",
   "extends": "retail.base",
-  "summary": "Staff roster coverage, shift gaps, and peak-hour labour. Big in store ops — coordinates with HR for policy and inventory for surge counts.",
+  "summary": "Staff roster coverage, shift gaps, and peak-hour labour. Big in store ops \u2014 coordinates with HR for policy and inventory for surge counts.",
   "activation": {
     "mode": "hybrid",
     "default_enabled": true,
     "triggers": [
-      { "type": "intent", "value": "workforce" },
-      { "type": "keyword", "value": "roster" },
-      { "type": "keyword", "value": "staffing" },
-      { "type": "keyword", "value": "shift" },
-      { "type": "keyword", "value": "labour" },
-      { "type": "keyword", "value": "labor" },
-      { "type": "keyword", "value": "headcount" }
+      {
+        "type": "intent",
+        "value": "workforce"
+      },
+      {
+        "type": "keyword",
+        "value": "roster"
+      },
+      {
+        "type": "keyword",
+        "value": "staffing"
+      },
+      {
+        "type": "keyword",
+        "value": "shift"
+      },
+      {
+        "type": "keyword",
+        "value": "labour"
+      },
+      {
+        "type": "keyword",
+        "value": "labor"
+      },
+      {
+        "type": "keyword",
+        "value": "headcount"
+      }
     ],
-    "put_off_by": ["disable:roster", "disable:workforce", "disable:retail.hat.workforce_roster"]
+    "put_off_by": [
+      "disable:roster",
+      "disable:workforce",
+      "disable:retail.hat.workforce_roster"
+    ]
   },
   "context_sources": [
     {
       "source_id": "ops_docs",
       "kind": "project_documents",
-      "doc_roles": ["policy", "incident", "document"],
+      "doc_roles": [
+        "policy",
+        "incident",
+        "document"
+      ],
       "description": "Store ops and coverage-related documents"
     },
     {
       "source_id": "exception_learning",
       "kind": "learning_profiles",
-      "modules": ["store_exceptions"],
+      "modules": [
+        "store_exceptions"
+      ],
       "description": "Recurring labour-related exception patterns when present"
     }
   ],
-  "allowed_paths": ["fixtures/northstar/**"],
-  "allowed_actions": ["retail.generate_operations_brief"],
+  "allowed_paths": [
+    "fixtures/northstar/**"
+  ],
+  "allowed_actions": [
+    "retail.generate_operations_brief"
+  ],
   "handoffs": [
     {
       "to_agent_id": "retail.hat.hr",
       "when": "roster change conflicts with leave/absence policy",
-      "carry": ["store", "role", "shift_window"],
+      "carry": [
+        "store",
+        "role",
+        "shift_window"
+      ],
       "requires_confirmation": true
     },
     {
       "to_agent_id": "retail.hat.store_operations",
       "when": "coverage gap affects opening/closing checklist",
-      "carry": ["store", "shift_window"],
+      "carry": [
+        "store",
+        "shift_window"
+      ],
       "requires_confirmation": false
     },
     {
       "to_agent_id": "retail.hat.inventory",
       "when": "extra heads needed for stock count or promo build",
-      "carry": ["store", "task"],
+      "carry": [
+        "store",
+        "task"
+      ],
       "requires_confirmation": false
     }
   ],
@@ -70,23 +115,176 @@
         "requires_confirmation": true
       }
     ],
-    "never_persist": ["llm_raw_text", "secrets", "employee_pii", "unverified_claims"]
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "employee_pii",
+      "unverified_claims"
+    ]
   },
   "verification": {
     "grounding": "documents_or_learning_only",
     "cite_required": true,
     "refuse_unaided_figures": true,
-    "checks": ["no_auto_publish_roster"]
+    "checks": [
+      "no_auto_publish_roster"
+    ]
   },
   "failure_policy": {
     "on_missing_context": "dependency_required",
     "on_unregistered_action": "unsupported",
     "on_low_confidence": "disclose_only"
   },
-  "permissions": ["retail:read", "retail:analyse"],
+  "permissions": [
+    "retail:read",
+    "retail:analyse"
+  ],
   "catalog": {
     "vendor_neutral": true,
     "product": "TEKsystems RetailOps",
-    "tags": ["hat", "workforce", "roster", "staffing"]
+    "tags": [
+      "hat",
+      "workforce",
+      "roster",
+      "staffing"
+    ]
+  },
+  "playbook": {
+    "formulas": [
+      {
+        "id": "roster.coverage_ratio",
+        "name": "Role coverage ratio",
+        "expression": "coverage_ratio = rostered_heads / max(required_heads, 1)",
+        "inputs": [
+          "rostered_heads",
+          "required_heads"
+        ],
+        "outputs": [
+          "coverage_ratio",
+          "gap_heads"
+        ],
+        "implemented_by": null,
+        "unit": "ratio",
+        "notes": "Gap heads = max(required_heads - rostered_heads, 0). Never auto-publish roster."
+      },
+      {
+        "id": "roster.peak_shortage",
+        "name": "Peak-hour shortage",
+        "expression": "peak_shortage = max over hour (required_heads(h) - rostered_heads(h))",
+        "inputs": [
+          "required_by_hour",
+          "rostered_by_hour"
+        ],
+        "outputs": [
+          "peak_shortage",
+          "peak_hour"
+        ],
+        "implemented_by": null,
+        "unit": "heads",
+        "notes": ""
+      },
+      {
+        "id": "roster.publish_lead_time",
+        "name": "Roster publish lead time gate",
+        "expression": "publish_allowed = (publish_at - now) >= confirmed_lead_time_hours",
+        "inputs": [
+          "publish_at",
+          "now",
+          "confirmed_lead_time_hours"
+        ],
+        "outputs": [
+          "publish_allowed"
+        ],
+        "implemented_by": null,
+        "unit": null,
+        "notes": "Lead-time override is confirmation-gated memory."
+      }
+    ],
+    "standards": [
+      {
+        "id": "roster.no_auto_publish",
+        "name": "No auto-publish roster",
+        "kind": "policy",
+        "ref": "",
+        "must_cite": true,
+        "description": "Roster advice is advisory; publishing requires human confirmation outside this agent."
+      },
+      {
+        "id": "roster.min_coverage",
+        "name": "Minimum coverage rules",
+        "kind": "internal",
+        "ref": "",
+        "must_cite": true,
+        "description": "Confirmed minimum coverage rules are stored only after confirmation."
+      },
+      {
+        "id": "roster.no_pii",
+        "name": "No employee PII persistence",
+        "kind": "policy",
+        "ref": "",
+        "must_cite": true,
+        "description": "Use roles/shifts, not personal identifiers, in memory keys."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "roster.coverage_gap_response",
+        "name": "Coverage gap response",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Identify store, role, and shift window",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Compute coverage_ratio and peak_shortage from available roster evidence",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "Propose cover options without publishing",
+            "requires_confirmation": false
+          },
+          {
+            "step": 4,
+            "action": "If leave/policy conflict, hand off to HR",
+            "requires_confirmation": true
+          },
+          {
+            "step": 5,
+            "action": "If count/promo surge, hand off to inventory for task sizing",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "staffing, roster, or shift gap",
+        "handoff_to": "retail.hat.hr",
+        "requires_confirmation": false
+      },
+      {
+        "id": "roster.confirm_coverage_rule",
+        "name": "Confirm coverage rule",
+        "steps": [
+          {
+            "step": 1,
+            "action": "State proposed minimum heads by role/shift",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Obtain confirmation",
+            "requires_confirmation": true
+          },
+          {
+            "step": 3,
+            "action": "Save confirmed_coverage_rule",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "manager sets a coverage rule",
+        "handoff_to": null,
+        "requires_confirmation": true
+      }
+    ]
   }
 }

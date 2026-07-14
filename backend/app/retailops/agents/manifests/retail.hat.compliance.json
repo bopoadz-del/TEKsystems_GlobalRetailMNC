@@ -114,5 +114,89 @@
       "safety",
       "regulatory"
     ]
+  },
+  "playbook": {
+    "formulas": [
+      {
+        "id": "compliance.citation_density",
+        "name": "Citation density",
+        "expression": "citation_density = cited_passages / max(claim_sentences, 1)",
+        "inputs": [
+          "cited_passages",
+          "claim_sentences"
+        ],
+        "outputs": [
+          "citation_density"
+        ],
+        "implemented_by": null,
+        "unit": null,
+        "notes": "Block answers with claim_sentences > 0 and cited_passages == 0."
+      },
+      {
+        "id": "compliance.promo_rule_alignment",
+        "name": "Promo rule alignment",
+        "expression": "aligned = retail.check_promotion_compliance.compliant",
+        "inputs": [
+          "rule_records",
+          "evidence_records"
+        ],
+        "outputs": [
+          "aligned",
+          "confidence"
+        ],
+        "implemented_by": "retail.check_promotion_compliance",
+        "unit": null,
+        "notes": ""
+      }
+    ],
+    "standards": [
+      {
+        "id": "compliance.cite_or_refuse",
+        "name": "Cite or refuse",
+        "kind": "regulatory",
+        "ref": "packs/retail_core_open_v1",
+        "must_cite": true,
+        "description": "Every policy claim needs retrieved citation URLs; low confidence blocks."
+      },
+      {
+        "id": "compliance.no_legal_conclusions",
+        "name": "No legal conclusions",
+        "kind": "policy",
+        "ref": "",
+        "must_cite": true,
+        "description": "Do not invent legal advice; stick to cited guidance language."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "compliance.regulatory_ask",
+        "name": "Regulatory / safety ask",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Retrieve official guidance / policy corpus",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Answer only with citations",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "If store-level follow-up needed, hand off to store operations",
+            "requires_confirmation": false
+          },
+          {
+            "step": 4,
+            "action": "If workplace training/staffing implication, hand off to HR",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "compliance, OSHA, FDA, FTC, food code",
+        "handoff_to": "retail.hat.store_operations",
+        "requires_confirmation": false
+      }
+    ]
   }
 }

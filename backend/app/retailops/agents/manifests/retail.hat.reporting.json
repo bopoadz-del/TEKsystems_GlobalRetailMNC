@@ -122,5 +122,82 @@
       "executive",
       "rollup"
     ]
+  },
+  "playbook": {
+    "formulas": [
+      {
+        "id": "reporting.profile_roll_count",
+        "name": "Learning profile roll count",
+        "expression": "profile_count = count(learning_profiles filtered by module)",
+        "inputs": [
+          "learning_profiles",
+          "module"
+        ],
+        "outputs": [
+          "profile_count"
+        ],
+        "implemented_by": "retail.get_learning_summary",
+        "unit": null,
+        "notes": ""
+      },
+      {
+        "id": "reporting.confidence_mix",
+        "name": "Confidence mix",
+        "expression": "confidence_mix = {high: n_high/n, medium: n_medium/n, low: n_low/n}",
+        "inputs": [
+          "learning_profiles"
+        ],
+        "outputs": [
+          "confidence_mix"
+        ],
+        "implemented_by": "retail.get_learning_summary",
+        "unit": null,
+        "notes": "No invented KPIs \u2014 only rollups of evidenced profiles/action outputs."
+      }
+    ],
+    "standards": [
+      {
+        "id": "reporting.no_invented_kpis",
+        "name": "No invented KPIs",
+        "kind": "kpi",
+        "ref": "",
+        "must_cite": true,
+        "description": "Executive claims must come from action outputs or cited domains."
+      },
+      {
+        "id": "reporting.cross_hat_detail",
+        "name": "Cross-hat detail on demand",
+        "kind": "internal",
+        "ref": "",
+        "must_cite": true,
+        "description": "When rollup depends on stock, margin, or labour detail, hand off to the owning hat."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "reporting.executive_rollup",
+        "name": "Executive rollup",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Pull learning summary / ops brief outputs",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Compose rollup with confidence mix",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "Attach handoff tips for inventory, accounting, and roster detail as needed",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "KPI, dashboard, executive summary, learning summary",
+        "handoff_to": null,
+        "requires_confirmation": false
+      }
+    ]
   }
 }

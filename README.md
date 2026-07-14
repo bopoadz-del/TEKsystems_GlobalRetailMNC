@@ -76,8 +76,18 @@ product contract for a retail mogul’s discipline agents:
 | Knowledge boundary | `context_sources` + `allowed_paths` |
 | Teachable / confirmed decisions | `memory.save` (always confirmation-gated) |
 | Cross-discipline tips | `handoffs` |
+| Formulas / standards / procedures | `playbook` |
 | Honesty / grounding | `verification` + `failure_policy` |
 | CerebrumDev.ai catalog | vendor-neutral JSON + `manifest.schema.json` |
+
+Every discipline hat ships a `playbook` with:
+
+- **formulas** — named expressions (bound to learning modules / actions when implemented)
+- **standards** — policy, regulatory, KPI, or safety norms (`must_cite` where required)
+- **procedures** — ordered steps, optional confirmation + handoff targets
+
+Composed hat views inherit base playbook entries and overlay hat-specific ones.
+Reasoner plans expose `playbook_refs` for the primary active hat.
 
 Hats specialize `retail.base`. They annotate `RetailExecutionPlan` with
 `active_agent_ids`, `primary_agent_id`, and `handoff_tips` — they do **not**
