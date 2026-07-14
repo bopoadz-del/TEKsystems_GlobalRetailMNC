@@ -419,6 +419,193 @@ def ingest_text_source(
     }
 
 
+def ingest_fda_jsonl_range(
+    session: Session,
+    *,
+    page_from: int,
+    page_to: int,
+    reset: bool = False,
+) -> Dict[str, Any]:
+    """Commit-friendly FDA page-range ingest (starter RAM).
+
+    ``reset=True`` deletes prior FDA docs for the release. Subsequent calls append
+    chunks onto the same document id derived from the pages JSONL checksum.
+    """
+    import json as _json
+
+    meta = get_source("fda_food_code_2022") or {}
+    project_id = ensure_platform_project(session)
+    jsonl = Path(__file__).resolve().parents[1] / "seeds" / "fda_food_code_2022.pages.jsonl"
+    if not jsonl.exists():
+        raise FileNotFoundError(f"missing FDA pages jsonl: {jsonl}")
+    # Stream checksum to avoid a second large buffer.
+    h = hashlib.sha256()
+    with open(jsonl, "rb") as fh:
+        for block in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(block)
+    checksum = h.hexdigest()
+    document_id = _doc_id("fda_food_code_2022", checksum)
+    filename = "fda_food_code_2022.pages.jsonl"
+    lineage = {
+        "release_id": RELEASE_ID,
+        "rag_pack_id": RAG_PACK_ID,
+        "collection_id": COLLECTION_ID,
+        "source_id": "fda_food_code_2022",
+        "source_name": meta.get("source_name"),
+        "publisher": meta.get("publisher"),
+        "jurisdiction": meta.get("jurisdiction"),
+        "authority_level": meta.get("authority_level"),
+        "source_class": meta.get("source_class"),
+        "edition": meta.get("edition"),
+        "knowledge_layer": "platform_prebuilt",
+        "content_checksum": checksum,
+        "not_universal_law": meta.get("not_universal_law"),
+        "doc_role": "food_safety",
+        "ingest_mode": "pages_jsonl_range",
+        "page_from": page_from,
+        "page_to": page_to,
+    }
+    embedder = get_embedder()
+    embedding_model = getattr(embedder, "model_name", None) or embedder.__class__.__name__
+
+    if reset:
+        prior = session.execute(
+            select(Document).where(
+                Document.tenant_id == PLATFORM_TENANT_ID,
+                Document.project_id == project_id,
+            )
+        ).scalars().all()
+        for doc in prior:
+            meta_doc = doc.meta or {}
+            if meta_doc.get("release_id") == RELEASE_ID and meta_doc.get("source_id") == "fda_food_code_2022":
+                session.delete(doc)
+        session.flush()
+
+    doc = session.get(Document, document_id)
+    if doc is None:
+        doc = Document(
+            id=document_id,
+            tenant_id=PLATFORM_TENANT_ID,
+            project_id=project_id,
+            filename=filename,
+            content_type="application/x-ndjson",
+            source_uri=f"seed://{jsonl}",
+            status="processing",
+            page_count=None,
+            chunk_count=0,
+            meta={**lineage, "embedding_model": embedding_model},
+        )
+        session.add(doc)
+        session.flush()
+        next_ordinal = 0
+    else:
+        next_ordinal = int(doc.chunk_count or 0)
+
+    added = 0
+    max_page = int(doc.page_count or 0)
+    pending: List[ParsedUnit] = []
+    batch_size = 12
+
+    def _flush() -> None:
+        nonlocal pending, next_ordinal, added
+        if not pending:
+            return
+        vectors = embedder.embed_batch([u.text for u in pending])
+        for unit, vector in zip(pending, vectors):
+            session.add(
+                DocumentChunk(
+                    id=_chunk_id(document_id, next_ordinal, unit.text),
+                    tenant_id=PLATFORM_TENANT_ID,
+                    project_id=project_id,
+                    document_id=document_id,
+                    chunk_ordinal=next_ordinal,
+                    text=unit.text,
+                    embedding=vector,
+                    source_filename=filename,
+                    page=unit.page,
+                    meta={
+                        **lineage,
+                        "section": unit.text.split("\n", 1)[0][:120],
+                        "embedding_model": embedding_model,
+                        "embedding_dimension": embedder.dim,
+                    },
+                )
+            )
+            next_ordinal += 1
+            added += 1
+        pending = []
+        session.flush()
+        session.expire_all()
+
+    with open(jsonl, encoding="utf-8") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            rec = _json.loads(line)
+            page = int(rec.get("page") or 0)
+            if page < page_from or page > page_to:
+                continue
+            # One chunk per page keeps RSS flat on starter instances.
+            text = _canon_text(str(rec.get("text") or ""))
+            if len(text) < 40:
+                continue
+            max_page = max(max_page, page)
+            pending.append(ParsedUnit(text=text, page=page, unit_type="text"))
+            if len(pending) >= batch_size:
+                _flush()
+    _flush()
+
+    doc = session.get(Document, document_id)
+    if doc:
+        doc.status = "processed"
+        doc.chunk_count = next_ordinal
+        doc.page_count = max_page or None
+        doc.meta = {**(doc.meta or {}), **lineage, "embedding_model": embedding_model}
+    pk = "r_" + hashlib.sha256(f"{RELEASE_ID}|fda_food_code_2022|src".encode()).hexdigest()[:24]
+    src_row = session.get(RetailPackSource, pk)
+    payload = dict(
+        id=pk,
+        release_id=RELEASE_ID,
+        source_id="fda_food_code_2022",
+        rag_pack_id=RAG_PACK_ID,
+        collection_id=COLLECTION_ID,
+        knowledge_layer="platform_prebuilt",
+        source_name=str(meta.get("source_name")),
+        source_class=str(meta.get("source_class")),
+        authority_level=str(meta.get("authority_level")),
+        licence=meta.get("licence"),
+        publisher=meta.get("publisher"),
+        content_checksum=checksum,
+        resolved_download_url=f"seed://{jsonl}",
+        acquisition_record={
+            "acquisition_method": "seed_pages_jsonl",
+            "content_checksum": checksum,
+            "embedding_model": embedding_model,
+            "page_from": page_from,
+            "page_to": page_to,
+        },
+        document_count=1,
+        chunk_count=next_ordinal,
+        status="ingested",
+    )
+    if src_row:
+        for k, v in payload.items():
+            setattr(src_row, k, v)
+    else:
+        session.add(RetailPackSource(**payload))
+    session.flush()
+    return {
+        "source_id": "fda_food_code_2022",
+        "document_id": document_id,
+        "chunk_count": next_ordinal,
+        "chunks_added": added,
+        "page_from": page_from,
+        "page_to": page_to,
+        "status": "ingested",
+        "embedding_model": embedding_model,
+    }
+
+
 def ingest_all_text(
     session: Session,
     *,
