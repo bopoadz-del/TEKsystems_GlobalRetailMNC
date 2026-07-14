@@ -5,4 +5,4 @@ The generic action contract lives in :mod:`app.retailops.kit.contract`; this pac
 declares domain behaviour.
 """
 
-RETAIL_KIT_VERSION = "1.1.0"
+RETAIL_KIT_VERSION = "1.3.0"

@@ -56,6 +56,20 @@ export interface ActionResult {
   error_message?: string;
 }
 
+export interface LearningProfile {
+  id: string;
+  module: string;
+  entity_type: string;
+  entity_key: string;
+  metrics: Record<string, unknown>;
+  sample_count: number;
+  confidence: string;
+  source_period_start?: string | null;
+  source_period_end?: string | null;
+  version: number;
+  advisory_only?: boolean;
+}
+
 export const api = {
   overview: (p: Principal) => req<{ document_count: number; recent_actions: { action_id: string; status: string; started_at: string }[]; system_health: Record<string, unknown> }>("/v1/overview", p),
   documents: (p: Principal) => req<{ documents: { document_id: string; filename: string; status: string; chunk_count: number; doc_role?: string; error?: string }[] }>("/v1/documents", p),
@@ -65,7 +79,7 @@ export const api = {
       body: JSON.stringify({ filename, text, doc_role }),
     }),
   ask: (p: Principal, question: string) =>
-    req<{ route: string; answer: string; citations: Citation[]; action_result: ActionResult | null }>("/v1/ask", p, {
+    req<{ route: string; answer: string; citations: Citation[]; action_result: ActionResult | null; execution_plan?: Record<string, unknown> }>("/v1/ask", p, {
       method: "POST",
       body: JSON.stringify({ question }),
     }),
@@ -76,4 +90,11 @@ export const api = {
       body: JSON.stringify({ arguments: args, auto_context: true, confirm }),
     }),
   audit: (p: Principal) => req<{ runs: { request_id: string; action_id: string; user_id: string; status: string; started_at: string; duration_ms: number; evidence_count: number }[] }>("/v1/audit", p),
+  learningSummary: (p: Principal, module?: string) =>
+    req<{ advisory_only: boolean; count: number; profiles: LearningProfile[] }>(
+      `/v1/learning/summary${module ? `?module=${encodeURIComponent(module)}` : ""}`,
+      p,
+    ),
+  learningProfiles: (p: Principal) =>
+    req<{ advisory_only: boolean; count: number; profiles: LearningProfile[] }>("/v1/learning/profiles", p),
 };

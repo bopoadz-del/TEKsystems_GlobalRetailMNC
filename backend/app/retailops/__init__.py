@@ -14,5 +14,5 @@ RETAILOPS_VERSION = "1.0.0"
 
 # Local kit snapshot id (not a Git commit SHA). Kept as BLOCKS_COMMIT for
 # backward-compatible /health JSON and build metadata fields.
-KIT_SNAPSHOT_ID = "local-retail-kit-1.1.0"
+KIT_SNAPSHOT_ID = "local-retail-kit-1.3.0"
 BLOCKS_COMMIT = KIT_SNAPSHOT_ID

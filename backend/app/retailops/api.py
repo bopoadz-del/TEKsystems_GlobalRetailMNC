@@ -168,6 +168,7 @@ async def ask(
         "answer": outcome["answer"],
         "citations": outcome.get("citations", []),
         "action_result": result.to_dict() if result is not None else None,
+        "execution_plan": outcome.get("execution_plan"),
     }
 
 
@@ -296,4 +297,64 @@ def overview(
             for r in runs
         ],
         "system_health": {"database": "ok", "kit_domains": INSTALLED_DOMAINS},
+    }
+
+
+@router.get("/v1/learning/summary")
+def learning_summary(
+    module: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    session: Session = Depends(get_session),
+    context: ActionContext = Depends(get_context),
+) -> Dict[str, Any]:
+    if not context.has_permission("retail:read"):
+        raise HTTPException(status_code=403, detail="missing retail:read")
+    from app.retailops.learning import RetailOutcomeLearningEngine, profile_to_dict
+
+    engine = RetailOutcomeLearningEngine()
+    profiles = engine.list_profiles(
+        session,
+        tenant_id=context.tenant_id,
+        project_id=context.project_id,
+        module=module,
+        limit=limit,
+        offset=offset,
+    )
+    return {
+        "advisory_only": True,
+        "count": len(profiles),
+        "profiles": [profile_to_dict(p) for p in profiles],
+    }
+
+
+@router.get("/v1/learning/profiles")
+def learning_profiles(
+    module: Optional[str] = None,
+    entity_type: Optional[str] = None,
+    entity_key: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    session: Session = Depends(get_session),
+    context: ActionContext = Depends(get_context),
+) -> Dict[str, Any]:
+    if not context.has_permission("retail:read"):
+        raise HTTPException(status_code=403, detail="missing retail:read")
+    from app.retailops.learning import RetailOutcomeLearningEngine, profile_to_dict
+
+    engine = RetailOutcomeLearningEngine()
+    profiles = engine.list_profiles(
+        session,
+        tenant_id=context.tenant_id,
+        project_id=context.project_id,
+        module=module,
+        entity_type=entity_type,
+        entity_key=entity_key,
+        limit=limit,
+        offset=offset,
+    )
+    return {
+        "advisory_only": True,
+        "count": len(profiles),
+        "profiles": [profile_to_dict(p) for p in profiles],
     }

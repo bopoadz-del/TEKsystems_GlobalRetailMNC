@@ -26,6 +26,7 @@ os.environ["RETAILOPS_SKIP_MIGRATIONS"] = "1"
 _TABLES = [
     "messages", "conversations", "action_runs", "document_chunks",
     "documents", "projects", "users", "tenants",
+    "retail_learning_profiles", "retail_learning_events",
 ]
 
 

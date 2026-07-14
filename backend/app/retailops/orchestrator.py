@@ -1,19 +1,21 @@
 """LangGraph orchestration for RetailOps.
 
-A small but real orchestration graph with six nodes:
+Graph:
 
-    classify_request → (retrieve_context | resolve_action) → execute_action
-                     → synthesize_response → persist_audit
+    classify_request
+    → reason_retail_request
+    → (retrieve_context | resolve_action | unsupported)
+    → execute_action
+    → synthesize_response
+    → persist_audit
 
-Conditional edges separate document/factual questions (RAG path) from
-registered deliverable/analysis requests (action path) and unknown requests
-(honest unsupported / chat fallback). Trusted tenant/project/permission fields
-in the state are set by the caller and are never replaced by model output.
+``RetailOperationsReasoner`` produces an auditable RetailExecutionPlan.
+Trusted tenant/project/permission fields in state are set by the caller and
+are never replaced by model output.
 """
 
 from __future__ import annotations
 
-import re
 from typing import Any, Dict, List, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -27,14 +29,9 @@ from app.retailops.kit.contract import (
     execute_action,
 )
 from app.retailops.providers import LLMProvider, ProviderError, get_provider
+from app.retailops.reasoning import RetailOperationsReasoner
 from app.retailops.retrieval import hybrid_search
 from app.retailops import service
-
-_STOPWORDS = {"generate", "analyse", "analyze", "check", "run", "create", "the", "a", "an", "of", "for", "s"}
-_QUESTION_STARTS = (
-    "what", "which", "how", "why", "when", "where", "who", "is", "are",
-    "does", "do", "can", "could", "should", "explain", "describe", "list",
-)
 
 
 class OrchestratorState(TypedDict, total=False):
@@ -52,48 +49,7 @@ class OrchestratorState(TypedDict, total=False):
     action_result: Optional[ActionResult]
     answer: str
     persisted: bool
-
-
-def _action_keywords(action_id: str) -> set:
-    name_part = action_id.split(".", 1)[1]
-    return {w for w in name_part.split("_") if w not in _STOPWORDS}
-
-
-def _is_question(text: str) -> bool:
-    t = text.strip().lower()
-    if t.endswith("?"):
-        return True
-    first = re.split(r"\W+", t, maxsplit=1)[0] if t else ""
-    return first in _QUESTION_STARTS
-
-
-def classify(question: str, registry: ActionRegistry, context: ActionContext) -> Dict[str, Any]:
-    """Deterministic, domain-neutral intent classification (anti-hijack)."""
-    q = question.lower()
-    tokens = set(re.findall(r"[a-z]+", q))
-    is_question = _is_question(question)
-
-    # Explicit "action:<id>" or "run/execute <id>" addressing.
-    explicit = re.search(r"action[:=]\s*([a-z_]+\.[a-z_]+)", q)
-    if explicit:
-        action_id = explicit.group(1)
-        if registry.resolve(action_id):
-            return {"route": "action", "action_id": action_id}
-        return {"route": "unsupported", "action_id": action_id}
-
-    # Match against permitted actions by their core noun keywords.
-    candidate: Optional[str] = None
-    for spec in registry.list_permitted(context):
-        kws = _action_keywords(spec.action_id)
-        if kws and kws.issubset(tokens):
-            candidate = spec.action_id
-            break
-
-    # A factual question is answered via RAG even if an action topic matches,
-    # unless the phrasing is an explicit imperative for the deliverable.
-    if candidate and not is_question:
-        return {"route": "action", "action_id": candidate}
-    return {"route": "rag", "action_id": None}
+    execution_plan: Dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
@@ -101,8 +57,29 @@ def classify(question: str, registry: ActionRegistry, context: ActionContext) ->
 # ---------------------------------------------------------------------------
 
 async def classify_request(state: OrchestratorState) -> Dict[str, Any]:
-    decision = classify(state["question"], state["registry"], state["context"])
-    return {"route": decision["route"], "action_id": decision.get("action_id"), "arguments": state.get("arguments", {})}
+    """Bootstrap node — preliminary pass; reasoner finalises routing."""
+    return {
+        "arguments": state.get("arguments", {}),
+        "route": state.get("route") or "rag",
+        "action_id": state.get("action_id"),
+    }
+
+
+async def reason_retail_request(state: OrchestratorState) -> Dict[str, Any]:
+    reasoner = RetailOperationsReasoner()
+    plan = reasoner.reason(
+        question=state["question"],
+        registry=state["registry"],
+        context=state["context"],
+        arguments=state.get("arguments", {}),
+    )
+    action_id = plan.recommended_action_ids[0] if plan.recommended_action_ids else None
+    return {
+        "execution_plan": plan.to_dict(),
+        "route": plan.route,
+        "action_id": action_id,
+        "arguments": {**(state.get("arguments") or {}), **(plan.arguments or {})},
+    }
 
 
 async def retrieve_context(state: OrchestratorState) -> Dict[str, Any]:
@@ -120,7 +97,10 @@ async def resolve_action(state: OrchestratorState) -> Dict[str, Any]:
     if spec is None:
         return {"route": "unsupported"}
     args = service.enrich_arguments(
-        state["session"], spec, state["context"], state.get("arguments", {}),
+        state["session"],
+        spec,
+        state["context"],
+        state.get("arguments", {}),
         query=state["question"],
     )
     return {"arguments": args}
@@ -169,10 +149,14 @@ async def synthesize_response(state: OrchestratorState) -> Dict[str, Any]:
             return {"answer": "You do not have permission to run this action."}
         return {"answer": "The action failed to complete."}
 
-    # RAG path
     citations = state.get("citations") or []
     if not citations:
-        return {"answer": "I could not find supporting information in the project's documents to answer this question."}
+        return {
+            "answer": (
+                "I could not find supporting information in the project's "
+                "documents to answer this question."
+            )
+        }
     system = (
         "You are a retail operations assistant. Answer strictly from the provided "
         "context and cite sources by their [n] markers. If the context is "
@@ -182,7 +166,10 @@ async def synthesize_response(state: OrchestratorState) -> Dict[str, Any]:
     try:
         answer = await provider.complete(system, prompt)
     except ProviderError:
-        answer = "Retrieval succeeded but the language model is unavailable, so no grounded answer could be generated."
+        answer = (
+            "Retrieval succeeded but the language model is unavailable, so no "
+            "grounded answer could be generated."
+        )
     return {"answer": answer}
 
 
@@ -200,10 +187,6 @@ async def persist_audit(state: OrchestratorState) -> Dict[str, Any]:
         return {"persisted": True}
     return {"persisted": False}
 
-
-# ---------------------------------------------------------------------------
-# Prompt builders / deterministic fallbacks
-# ---------------------------------------------------------------------------
 
 def _rag_prompt(question: str, citations: List[Dict[str, Any]]) -> str:
     lines = [f"Question: {question}", "", "Context:"]
@@ -232,11 +215,7 @@ def _deterministic_action_summary(result: ActionResult) -> str:
     )
 
 
-# ---------------------------------------------------------------------------
-# Graph assembly
-# ---------------------------------------------------------------------------
-
-def _route_after_classify(state: OrchestratorState) -> str:
+def _route_after_reason(state: OrchestratorState) -> str:
     route = state.get("route")
     if route == "action":
         return "resolve_action"
@@ -252,6 +231,7 @@ def _route_after_resolve(state: OrchestratorState) -> str:
 def build_graph():
     graph = StateGraph(OrchestratorState)
     graph.add_node("classify_request", classify_request)
+    graph.add_node("reason_retail_request", reason_retail_request)
     graph.add_node("retrieve_context", retrieve_context)
     graph.add_node("resolve_action", resolve_action)
     graph.add_node("execute_action", execute_action_node)
@@ -259,9 +239,10 @@ def build_graph():
     graph.add_node("persist_audit", persist_audit)
 
     graph.add_edge(START, "classify_request")
+    graph.add_edge("classify_request", "reason_retail_request")
     graph.add_conditional_edges(
-        "classify_request",
-        _route_after_classify,
+        "reason_retail_request",
+        _route_after_reason,
         {
             "resolve_action": "resolve_action",
             "retrieve_context": "retrieve_context",
@@ -288,6 +269,12 @@ def get_graph():
     if _compiled is None:
         _compiled = build_graph()
     return _compiled
+
+
+def reset_graph() -> None:
+    """Drop the compiled graph (tests that mutate the registry during a run)."""
+    global _compiled
+    _compiled = None
 
 
 async def run_orchestrator(
@@ -317,4 +304,5 @@ async def run_orchestrator(
         "answer": final.get("answer", ""),
         "citations": final.get("citations", []),
         "action_result": final.get("action_result"),
+        "execution_plan": final.get("execution_plan"),
     }

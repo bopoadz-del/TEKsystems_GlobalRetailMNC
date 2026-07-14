@@ -1,20 +1,13 @@
 """Retail domain actions for the RetailOps pilot.
 
-Three pilot actions, all deterministic (no LLM calls in the handler body):
-
-* ``retail.generate_operations_brief``
-* ``retail.analyse_inventory_risk``
-* ``retail.check_promotion_compliance``
-
-Handlers receive a trusted :class:`ActionContext` and already-retrieved
-records/rows from the host runtime. They never fabricate results: when the
-required inputs are absent they return ``dependency_required`` with a concrete
-dependency describing what is needed.
+Pilot handlers are deterministic (no LLM calls in the handler body). Learning
+actions write verified outcomes only; advisory profiles never overwrite source
+systems automatically.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.retailops.kit.contract.models import (
     ActionContext,
@@ -29,6 +22,7 @@ from app.retailops.kit.domains.retail import schemas as S
 
 _PERM_READ = "retail:read"
 _PERM_ANALYSE = "retail:analyse"
+_PERM_LEARNING_WRITE = "retail:learning_write"
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +213,9 @@ async def analyse_inventory_risk(
         if f not in present
     ]
 
+    # Advisory learning profiles (high confidence only may alter applied ROP).
+    learning_adjustments = _load_inventory_learning_adjustments(context, usable)
+
     stockout_risks: List[Dict[str, Any]] = []
     overstock_risks: List[Dict[str, Any]] = []
     slow_moving: List[Dict[str, Any]] = []
@@ -228,11 +225,21 @@ async def analyse_inventory_risk(
         sku = row["sku"]
         on_hand = row["on_hand"]
         ads = row.get("average_daily_sales")
-        rop = row.get("reorder_point")
+        original_rop = row.get("reorder_point")
         safety = row.get("safety_stock")
-        item = {"sku": sku, "product_name": row.get("product_name"), "on_hand": on_hand, "store": row.get("store")}
+        store = row.get("store")
+        item = {
+            "sku": sku,
+            "product_name": row.get("product_name"),
+            "on_hand": on_hand,
+            "store": store,
+        }
 
-        # Anomalies: negative stock, count variance.
+        applied_rop = original_rop
+        adj = learning_adjustments.get(_inv_key(sku, store))
+        if adj and adj.get("apply"):
+            applied_rop = adj.get("applied_value")
+
         if on_hand < 0:
             anomalies.append({**item, "issue": "negative_on_hand"})
         last_c = row.get("last_count_quantity")
@@ -240,24 +247,30 @@ async def analyse_inventory_risk(
         if last_c is not None and cur_c is not None and last_c > 0:
             variance = abs(cur_c - last_c) / last_c
             if variance >= 0.2:
-                anomalies.append({**item, "issue": "count_variance", "variance_pct": round(variance * 100, 1)})
+                anomalies.append(
+                    {
+                        **item,
+                        "issue": "count_variance",
+                        "variance_pct": round(variance * 100, 1),
+                    }
+                )
 
-        # Stockout risk.
         days_of_supply = None
         if ads and ads > 0:
             days_of_supply = round(on_hand / ads, 1)
         reasons: List[str] = []
-        if rop is not None and on_hand <= rop:
+        if applied_rop is not None and on_hand <= applied_rop:
             reasons.append("on_hand<=reorder_point")
         if safety is not None and on_hand <= safety:
             reasons.append("on_hand<=safety_stock")
         if days_of_supply is not None and days_of_supply <= stockout_days:
             reasons.append(f"days_of_supply<={stockout_days}")
         if reasons:
-            stockout_risks.append({**item, "days_of_supply": days_of_supply, "reasons": reasons})
+            stockout_risks.append(
+                {**item, "days_of_supply": days_of_supply, "reasons": reasons}
+            )
             continue
 
-        # Overstock / slow-moving.
         if days_of_supply is not None and days_of_supply >= overstock_days:
             overstock_risks.append({**item, "days_of_supply": days_of_supply})
         elif days_of_supply is not None and days_of_supply >= slow_days:
@@ -269,6 +282,7 @@ async def analyse_inventory_risk(
         f"days_of_supply = on_hand / average_daily_sales; stockout if <= {stockout_days} days.",
         f"overstock if days_of_supply >= {overstock_days}; slow-moving if >= {slow_days}.",
         "count variance flagged at >= 20% between last and current physical counts.",
+        "learned reorder profiles are advisory; only high-confidence profiles alter applied thresholds.",
     ]
 
     evidence = [
@@ -283,6 +297,9 @@ async def analyse_inventory_risk(
         "overstock_count": len(overstock_risks),
         "slow_moving_count": len(slow_moving),
         "anomaly_count": len(anomalies),
+        "learning_adjustments_applied": sum(
+            1 for a in learning_adjustments.values() if a.get("apply")
+        ),
     }
 
     output = {
@@ -294,8 +311,78 @@ async def analyse_inventory_risk(
         "assumptions": assumptions,
         "missing_fields": missing_fields,
         "evidence": [e.to_dict() for e in evidence],
+        "learning_adjustments": list(learning_adjustments.values()),
     }
     return ActionOutcome.success(output, evidence=evidence)
+
+
+def _inv_key(sku: Any, store: Any) -> str:
+    return f"{sku}|{store or ''}"
+
+
+def _load_inventory_learning_adjustments(
+    context: ActionContext, rows: List[Dict[str, Any]]
+) -> Dict[str, Dict[str, Any]]:
+    """Return advisory learning disclosures keyed by sku|store.
+
+    Source inventory data remains authoritative. High-confidence profiles may
+    alter the *applied* reorder point used in stockout checks; low/medium
+    confidence profiles are disclosed but do not change calculations.
+    """
+    out: Dict[str, Dict[str, Any]] = {}
+    try:
+        from app.retailops.db import session_scope
+        from app.retailops.learning import RetailOutcomeLearningEngine
+    except Exception:
+        return out
+
+    engine = RetailOutcomeLearningEngine()
+    try:
+        with session_scope() as session:
+            for row in rows:
+                sku = row.get("sku")
+                store = row.get("store")
+                if not sku or not store:
+                    continue
+                profile = engine.get_demand_profile(
+                    session,
+                    tenant_id=context.tenant_id,
+                    project_id=context.project_id,
+                    sku=str(sku),
+                    store=str(store),
+                )
+                if profile is None:
+                    continue
+                metrics = profile.metrics or {}
+                original = row.get("reorder_point")
+                learned = metrics.get("recommended_reorder_point")
+                confidence = profile.confidence
+                apply = confidence == "high" and learned is not None
+                out[_inv_key(sku, store)] = {
+                    "sku": sku,
+                    "store": store,
+                    "original_threshold": original,
+                    "learned_advisory_value": learned,
+                    "applied_value": learned if apply else original,
+                    "apply": apply,
+                    "sample_count": profile.sample_count,
+                    "confidence": confidence,
+                    "source_period_start": (
+                        profile.source_period_start.isoformat()
+                        if profile.source_period_start
+                        else None
+                    ),
+                    "source_period_end": (
+                        profile.source_period_end.isoformat()
+                        if profile.source_period_end
+                        else None
+                    ),
+                    "profile_version": profile.version,
+                    "advisory_only": True,
+                }
+    except Exception:
+        return out
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -438,6 +525,173 @@ async def check_promotion_compliance(
 
 
 # ---------------------------------------------------------------------------
+# D. Learning actions
+# ---------------------------------------------------------------------------
+
+async def record_verified_outcome(
+    context: ActionContext, arguments: Dict[str, Any]
+) -> ActionOutcome:
+    from app.retailops.db import session_scope
+    from app.retailops.learning import RetailOutcomeLearningEngine
+
+    module = arguments.get("module")
+    payload = arguments.get("payload") or {}
+    dedupe = arguments.get("deduplication_key")
+    if not module or not dedupe:
+        return ActionOutcome(
+            status=ActionStatus.VALIDATION_ERROR,
+            error_code="missing_fields",
+            error_message="module and deduplication_key are required",
+        )
+
+    verification_status = arguments.get("verification_status") or "verified"
+    engine = RetailOutcomeLearningEngine()
+    try:
+        with session_scope() as session:
+            result = engine.record_verified_outcome(
+                session,
+                tenant_id=context.tenant_id,
+                project_id=context.project_id,
+                module=str(module),
+                payload=dict(payload),
+                verified_by=context.user_id,
+                deduplication_key=str(dedupe),
+                event_type=arguments.get("event_type"),
+                source_document_id=arguments.get("source_document_id"),
+                source_action_run_id=arguments.get("source_action_run_id"),
+                source_reference=arguments.get("source_reference"),
+                verification_status=str(verification_status),
+            )
+    except ValueError as exc:
+        return ActionOutcome(
+            status=ActionStatus.VALIDATION_ERROR,
+            error_code="learning_validation_error",
+            error_message=str(exc)[:500],
+        )
+
+    output = {
+        "event_id": result.get("event_id"),
+        "module": result.get("module") or module,
+        "profile_key": result.get("profile_key"),
+        "profile_version": result.get("profile_version"),
+        "sample_count": result.get("sample_count") or 0,
+        "confidence": result.get("confidence") or "low",
+        "changed_metrics": result.get("changed_metrics") or {},
+        "warnings": result.get("warnings") or [],
+        "evidence": result.get("evidence") or {},
+        "idempotent": bool(result.get("idempotent")),
+        "advisory_only": True,
+    }
+    return ActionOutcome.success(
+        output,
+        warnings=list(output["warnings"]),
+        metadata={
+            "event_id": output["event_id"],
+            "profile_version": output["profile_version"],
+            "sample_count": output["sample_count"],
+            "confidence": output["confidence"],
+        },
+    )
+
+
+async def get_learning_summary(
+    context: ActionContext, arguments: Dict[str, Any]
+) -> ActionOutcome:
+    from app.retailops.db import session_scope
+    from app.retailops.learning import RetailOutcomeLearningEngine, profile_to_dict
+
+    engine = RetailOutcomeLearningEngine()
+    limit = int(arguments.get("limit") or 100)
+    offset = int(arguments.get("offset") or 0)
+    with session_scope() as session:
+        profiles = engine.list_profiles(
+            session,
+            tenant_id=context.tenant_id,
+            project_id=context.project_id,
+            module=arguments.get("module"),
+            entity_type=arguments.get("entity_type"),
+            entity_key=arguments.get("entity_key"),
+            limit=limit,
+            offset=offset,
+        )
+        rows = [profile_to_dict(p) for p in profiles]
+    return ActionOutcome.success(
+        {"profiles": rows, "count": len(rows), "advisory_only": True}
+    )
+
+
+async def recommend_reorder_parameters(
+    context: ActionContext, arguments: Dict[str, Any]
+) -> ActionOutcome:
+    from app.retailops.db import session_scope
+    from app.retailops.learning import DemandReorderCalibrator, RetailOutcomeLearningEngine
+
+    sku = arguments.get("sku")
+    if not sku:
+        return ActionOutcome(
+            status=ActionStatus.VALIDATION_ERROR,
+            error_code="missing_sku",
+            error_message="sku is required",
+        )
+    store = arguments.get("store")
+    region = arguments.get("region")
+    if not store and not region:
+        return ActionOutcome.dependency(
+            [
+                ActionDependency(
+                    kind="location_context",
+                    description="store or region is required for reorder recommendation",
+                )
+            ]
+        )
+
+    engine = RetailOutcomeLearningEngine()
+    calibrator = DemandReorderCalibrator()
+    with session_scope() as session:
+        profile = engine.get_demand_profile(
+            session,
+            tenant_id=context.tenant_id,
+            project_id=context.project_id,
+            sku=str(sku),
+            store=store,
+            region=region,
+        )
+        metrics = dict(profile.metrics or {}) if profile else None
+        recommendation = calibrator.recommend(
+            profile_metrics=metrics,
+            current_reorder_point=arguments.get("current_reorder_point"),
+            current_safety_stock=arguments.get("current_safety_stock"),
+        )
+
+    if recommendation.get("status") == "dependency_required":
+        return ActionOutcome.dependency(
+            [
+                ActionDependency(
+                    kind="learning_profile",
+                    description="verified demand/reorder learning profile required",
+                    hint="Record verified forecast vs actual outcomes first.",
+                )
+            ],
+            metadata={"sku": sku, "store": store, "region": region},
+        )
+
+    output = {
+        "status": "ok",
+        "sku": sku,
+        "advisory_only": True,
+    }
+    if store is not None:
+        output["store"] = store
+    if region is not None:
+        output["region"] = region
+    for k, v in recommendation.items():
+        if k == "status" or v is None:
+            continue
+        output[k] = v
+    return ActionOutcome.success(output)
+
+
+# ---------------------------------------------------------------------------
 # Action specifications (discovered by the registry)
 # ---------------------------------------------------------------------------
 
@@ -469,7 +723,7 @@ ACTION_SPECS: List[ActionSpec] = [
         domain="retail",
         name="Analyse Inventory Risk",
         description="Analyse structured inventory data for stockout, overstock, slow-moving stock and anomalies.",
-        version="1.0.0",
+        version="1.1.0",
         kit_version=RETAIL_KIT_VERSION,
         input_schema=S.INVENTORY_RISK_INPUT,
         output_schema=S.INVENTORY_RISK_OUTPUT,
@@ -480,7 +734,8 @@ ACTION_SPECS: List[ActionSpec] = [
         confirmation_required=False,
         synthesis_instructions=(
             "Report inventory risks grouped by type with the deterministic figures "
-            "provided. State assumptions and missing fields explicitly."
+            "provided. State assumptions, missing fields, and any advisory learning "
+            "adjustments explicitly."
         ),
         evaluation_fixtures=["inventory_risk_happy", "inventory_risk_no_data"],
         handler=analyse_inventory_risk,
@@ -506,5 +761,74 @@ ACTION_SPECS: List[ActionSpec] = [
         ),
         evaluation_fixtures=["promotion_compliance_happy", "promotion_compliance_no_rules"],
         handler=check_promotion_compliance,
+    ),
+    ActionSpec(
+        action_id="retail.record_verified_outcome",
+        domain="retail",
+        name="Record Verified Outcome",
+        description=(
+            "Record an authorised verified operational outcome and update the "
+            "relevant tenant/project learning profile."
+        ),
+        version="1.0.0",
+        kit_version=RETAIL_KIT_VERSION,
+        input_schema=S.RECORD_VERIFIED_OUTCOME_INPUT,
+        output_schema=S.RECORD_VERIFIED_OUTCOME_OUTPUT,
+        required_context=["tenant_id", "project_id", "user_id"],
+        permissions=[_PERM_LEARNING_WRITE],
+        risk_classification="high",
+        read_only=False,
+        confirmation_required=True,
+        synthesis_instructions=(
+            "Confirm the verified outcome was recorded, report sample count and "
+            "confidence, and emphasise that learning remains advisory only."
+        ),
+        evaluation_fixtures=["learning_record_happy"],
+        handler=record_verified_outcome,
+    ),
+    ActionSpec(
+        action_id="retail.get_learning_summary",
+        domain="retail",
+        name="Get Learning Summary",
+        description="Return current advisory learning profiles for the active tenant/project.",
+        version="1.0.0",
+        kit_version=RETAIL_KIT_VERSION,
+        input_schema=S.GET_LEARNING_SUMMARY_INPUT,
+        output_schema=S.GET_LEARNING_SUMMARY_OUTPUT,
+        required_context=["tenant_id", "project_id"],
+        permissions=[_PERM_READ],
+        risk_classification="low",
+        read_only=True,
+        confirmation_required=False,
+        synthesis_instructions=(
+            "Summarise learned profiles with sample counts and confidence. Label "
+            "all outputs as advisory only."
+        ),
+        evaluation_fixtures=["learning_summary_happy"],
+        handler=get_learning_summary,
+    ),
+    ActionSpec(
+        action_id="retail.recommend_reorder_parameters",
+        domain="retail",
+        name="Recommend Reorder Parameters",
+        description=(
+            "Return advisory reorder and safety-stock recommendations from verified "
+            "demand learning profiles."
+        ),
+        version="1.0.0",
+        kit_version=RETAIL_KIT_VERSION,
+        input_schema=S.RECOMMEND_REORDER_INPUT,
+        output_schema=S.RECOMMEND_REORDER_OUTPUT,
+        required_context=["tenant_id", "project_id"],
+        permissions=[_PERM_ANALYSE],
+        risk_classification="low",
+        read_only=True,
+        confirmation_required=False,
+        synthesis_instructions=(
+            "Present current vs recommended reorder settings with sample count, "
+            "confidence and source period. Never imply automatic application."
+        ),
+        evaluation_fixtures=["reorder_recommend_happy", "reorder_recommend_no_profile"],
+        handler=recommend_reorder_parameters,
     ),
 ]
