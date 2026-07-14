@@ -287,8 +287,19 @@ def ingest_text_source(
         text = data.decode("utf-8", errors="replace")
         text = re.sub(r"(?is)<script.*?>.*?</script>", " ", text)
         text = re.sub(r"(?is)<style.*?>.*?</style>", " ", text)
+        text = re.sub(r"(?is)<nav\b.*?>.*?</nav>", " ", text)
+        text = re.sub(r"(?is)<footer\b.*?>.*?</footer>", " ", text)
+        text = re.sub(r"(?is)<header\b.*?>.*?</header>", " ", text)
+        # Prefer main content when present (FTC pages embed large chrome).
+        main = re.search(r"(?is)<main\b.*?>(.*?)</main>", text)
+        if main:
+            text = main.group(1)
         text = re.sub(r"(?is)<[^>]+>", "\n", text)
-        unit_iter: Iterable[ParsedUnit] = _section_chunks(_canon_text(text))
+        text = _canon_text(text)
+        # Hard cap cleaned HTML to keep starter-job RSS bounded.
+        if len(text) > 180_000:
+            text = text[:180_000]
+        unit_iter: Iterable[ParsedUnit] = _section_chunks(text)
     elif filename.endswith(".pdf") or data[:4] == b"%PDF":
         from pypdf import PdfReader
 
