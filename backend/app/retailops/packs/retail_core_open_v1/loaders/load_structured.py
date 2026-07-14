@@ -443,6 +443,7 @@ def load_uci_online_retail_ii(
 
     cap = UCI_FULL_ROW_CAP if row_cap is None else row_cap
     stream: Iterable[Dict[str, Any]]
+    stream_warnings: List[str] = []
 
     if rows is not None:
         stream = rows
@@ -455,8 +456,7 @@ def load_uci_online_retail_ii(
         acq = acquire_source(UCI_SOURCE)
         acquisition.update(acq)
         path = Path(acq["path"])
-        stream, w = _iter_uci_records(path, row_cap=cap)
-        warnings.extend(w)
+        stream, stream_warnings = _iter_uci_records(path, row_cap=cap)
 
     session.execute(
         delete(RetailTransaction).where(
@@ -499,6 +499,7 @@ def load_uci_online_retail_ii(
                     },
                 )
             )
+        unit_raw = r.get("UnitPrice") if r.get("UnitPrice") is not None else r.get("Price")
         batch_txn.append(
             RetailTransaction(
                 id=_id(RELEASE_ID, UCI_SOURCE, "txn", invoice, sku, i),
@@ -511,11 +512,7 @@ def load_uci_online_retail_ii(
                 description=str(r.get("Description") or ""),
                 quantity=qty,
                 invoice_date=str(r.get("InvoiceDate") or ""),
-                unit_price=(
-                    float(r.get("UnitPrice") if r.get("UnitPrice") is not None else r.get("Price") or 0)
-                    if (r.get("UnitPrice") is not None or r.get("Price") is not None)
-                    else None
-                ),
+                unit_price=float(unit_raw) if unit_raw is not None else None,
                 customer_id=str(r.get("Customer ID") or r.get("CustomerID") or "") or None,
                 country=str(r.get("Country") or "") or None,
                 is_cancellation=is_cancel,
@@ -541,6 +538,9 @@ def load_uci_online_retail_ii(
             session.bulk_save_objects(batch_txn)
         session.flush()
         session.commit()
+
+    if stream_warnings:
+        warnings.extend(stream_warnings)
 
     acquisition["structured_row_count"] = rows_loaded
     acquisition["warnings"] = warnings
