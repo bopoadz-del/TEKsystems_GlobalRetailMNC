@@ -511,8 +511,12 @@ def load_uci_online_retail_ii(
                 description=str(r.get("Description") or ""),
                 quantity=qty,
                 invoice_date=str(r.get("InvoiceDate") or ""),
-                unit_price=float(r.get("UnitPrice") or 0) if r.get("UnitPrice") is not None else None,
-                customer_id=str(r.get("CustomerID") or "") or None,
+                unit_price=(
+                    float(r.get("UnitPrice") if r.get("UnitPrice") is not None else r.get("Price") or 0)
+                    if (r.get("UnitPrice") is not None or r.get("Price") is not None)
+                    else None
+                ),
+                customer_id=str(r.get("Customer ID") or r.get("CustomerID") or "") or None,
                 country=str(r.get("Country") or "") or None,
                 is_cancellation=is_cancel,
                 meta={"usage": "historical evaluation and demonstration data"},
