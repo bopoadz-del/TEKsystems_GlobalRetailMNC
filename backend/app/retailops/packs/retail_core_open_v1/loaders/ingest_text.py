@@ -147,21 +147,50 @@ def ingest_text_source(
         raise RuntimeError(f"acquire failed for {source_id}: {exc}") from exc
 
     path = Path(acq["path"])
-    data = path.read_bytes()
     checksum = acq["content_checksum"]
 
-    # Infer filename for parser from fixture/original suffix / magic bytes.
-    if fixture_path is not None:
-        filename = f"{source_id}{fixture_path.suffix or '.txt'}"
+    # Prefer streamable page JSONL before loading large PDF blobs into RAM.
+    pages_jsonl: Optional[Path] = None
+    seed_jsonl = Path(__file__).resolve().parents[1] / "seeds" / "fda_food_code_2022.pages.jsonl"
+    if source_id == "fda_food_code_2022" and seed_jsonl.exists():
+        pages_jsonl = seed_jsonl
+    if fixture_path is not None and fixture_path.suffix.lower() == ".pdf":
+        candidate = fixture_path.with_suffix(".pages.jsonl")
+        if candidate.exists():
+            pages_jsonl = candidate
+    elif fixture_path is not None and fixture_path.name.endswith(".pages.jsonl"):
+        pages_jsonl = fixture_path
+
+    if pages_jsonl is not None:
+        raw_jsonl = pages_jsonl.read_bytes()
+        checksum = hashlib.sha256(raw_jsonl).hexdigest()
+        acq = {
+            **acq,
+            "resolved_download_url": f"seed://{pages_jsonl}",
+            "content_checksum": checksum,
+            "file_size": len(raw_jsonl),
+            "acquisition_method": "seed_pages_jsonl",
+            "warnings": list(acq.get("warnings") or [])
+            + ["ingested_from_pages_jsonl_of_official_pdf"],
+        }
+        path = pages_jsonl
+        filename = "fda_food_code_2022.pages.jsonl"
+        data = b""
+        del raw_jsonl
     else:
-        url = (acq.get("resolved_download_url") or "").lower()
-        ctype = (acq.get("content_type") or "").lower()
-        if data[:4] == b"%PDF" or "pdf" in ctype or url.endswith(".pdf"):
-            filename = f"{source_id}.pdf"
-        elif b"<html" in data[:800].lower() or "html" in ctype or url.endswith((".html", ".htm")):
-            filename = f"{source_id}.html"
+        data = path.read_bytes()
+        # Infer filename for parser from fixture/original suffix / magic bytes.
+        if fixture_path is not None:
+            filename = f"{source_id}{fixture_path.suffix or '.txt'}"
         else:
-            filename = f"{source_id}.txt"
+            url = (acq.get("resolved_download_url") or "").lower()
+            ctype = (acq.get("content_type") or "").lower()
+            if data[:4] == b"%PDF" or "pdf" in ctype or url.endswith(".pdf"):
+                filename = f"{source_id}.pdf"
+            elif b"<html" in data[:800].lower() or "html" in ctype or url.endswith((".html", ".htm")):
+                filename = f"{source_id}.html"
+            else:
+                filename = f"{source_id}.txt"
 
     document_id = _doc_id(source_id, checksum)
     existing = session.get(Document, document_id)
@@ -216,9 +245,9 @@ def ingest_text_source(
     embedder = get_embedder()
     embedding_model = getattr(embedder, "model_name", None) or embedder.__class__.__name__
     batch_size = int(getattr(embedder, "batch_size", 32) or 32)
-    # Smaller batches on large official PDFs keep starter-instance RSS bounded.
-    if filename.endswith(".pdf"):
-        batch_size = min(batch_size, 24)
+    # Smaller batches on large official corpora keep starter-instance RSS bounded.
+    if filename.endswith(".pdf") or filename.endswith(".pages.jsonl"):
+        batch_size = min(batch_size, 16)
 
     doc = Document(
         id=document_id,
@@ -272,7 +301,24 @@ def ingest_text_source(
         session.flush()
         session.expire_all()
 
-    if filename.endswith(".html") or b"<html" in data[:800].lower():
+    if pages_jsonl is not None or filename.endswith(".pages.jsonl"):
+        import json as _json
+
+        jsonl_path = pages_jsonl or path
+
+        def _jsonl_units() -> Iterable[ParsedUnit]:
+            with open(jsonl_path, encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    rec = _json.loads(line)
+                    text = str(rec.get("text") or "").replace("\x00", "").strip()
+                    if text:
+                        yield from _section_chunks(text, page=rec.get("page"))
+
+        unit_iter: Iterable[ParsedUnit] = _jsonl_units()
+    elif filename.endswith(".html") or (data[:800].lower().find(b"<html") >= 0):
         text = data.decode("utf-8", errors="replace")
         text = re.sub(r"(?is)<script.*?>.*?</script>", " ", text)
         text = re.sub(r"(?is)<style.*?>.*?</style>", " ", text)
@@ -288,7 +334,7 @@ def ingest_text_source(
         # Hard cap cleaned HTML to keep starter-job RSS bounded.
         if len(text) > 180_000:
             text = text[:180_000]
-        unit_iter: Iterable[ParsedUnit] = _section_chunks(text)
+        unit_iter = _section_chunks(text)
     elif filename.endswith(".pdf") or data[:4] == b"%PDF":
         from pypdf import PdfReader
 
