@@ -4,7 +4,14 @@ import { api, type ActionResult, type ActionSpec, type Citation, type Integratio
 type View = "command" | "documents" | "actions" | "audit" | "integrations";
 type ChatMessage = { role: "assistant" | "user"; text: string; citations?: Citation[] };
 
-const INITIAL_PRINCIPAL: Principal = { userId: "u_ops_manager", tenantId: "northstar", projectId: "" };
+// Default to the platform-prebuilt principal (FDA/OSHA/FTC + open-dataset summaries):
+// it is the identity this pilot deployment's retail_core_open_v1 load job provisions,
+// so it authenticates out of the box on the running instance. It still requires that
+// one-off pack/fixture load to have been run — see RENDER.md — it is not created
+// automatically on a brand new database. Tenant fixture projects (Australia Region /
+// Global Region under tenant "retail") also work once loaded, but their project ids
+// are generated per-deployment; paste one into Project ID below instead.
+const INITIAL_PRINCIPAL: Principal = { userId: "u_platform", tenantId: "platform", projectId: "prj_prebuilt_retail_core" };
 const Icon = ({ children }: { children: ReactNode }) => <span className="icon" aria-hidden>{children}</span>;
 
 function download(filename: string, type: string, content: string) {
@@ -72,7 +79,7 @@ export function App() {
     if(kind==="pdf"){window.print();return;} download(`retailops-${principal.projectId}.${kind==="doc"?"doc":"xls"}`,kind==="doc"?"application/msword":"application/vnd.ms-excel",html);
   };
 
-  if(!signedIn) return <div className="login-page"><div className="edge-word left">PILOT</div><div className="edge-word right">SDKSYSTEMS</div><section className="login-card"><div className="mark">N</div><p className="eyebrow">NORTHSTAR INTELLIGENCE</p><h1>Retail operations,<br/><em>made decisive.</em></h1><p className="login-copy">Secure, grounded intelligence for every store, project and operational decision.</p><div className="login-grid"><label>User ID<input value={principal.userId} onChange={e=>setPrincipal({...principal,userId:e.target.value})}/></label><label>Tenant<input value={principal.tenantId} onChange={e=>setPrincipal({...principal,tenantId:e.target.value})}/></label></div><label>Project ID<input autoFocus value={principal.projectId} onChange={e=>setPrincipal({...principal,projectId:e.target.value})} placeholder="Paste the Northstar project ID" onKeyDown={e=>e.key==="Enter"&&signIn()}/></label>{notice&&<p className="form-error">{notice}</p>}<button className="signin" onClick={signIn}>Enter workspace <span>→</span></button><footer><span>● Systems operational</span><span>Protected workspace</span></footer></section></div>;
+  if(!signedIn) return <div className="login-page"><div className="edge-word left">PILOT</div><div className="edge-word right">SDKSYSTEMS</div><section className="login-card"><div className="mark">N</div><p className="eyebrow">NORTHSTAR INTELLIGENCE</p><h1>Retail operations,<br/><em>made decisive.</em></h1><p className="login-copy">Secure, grounded intelligence for every store, project and operational decision.</p><div className="login-grid"><label>User ID<input value={principal.userId} onChange={e=>setPrincipal({...principal,userId:e.target.value})}/></label><label>Tenant<input value={principal.tenantId} onChange={e=>setPrincipal({...principal,tenantId:e.target.value})}/></label></div><label>Project ID<input autoFocus value={principal.projectId} onChange={e=>setPrincipal({...principal,projectId:e.target.value})} placeholder="e.g. prj_prebuilt_retail_core" onKeyDown={e=>e.key==="Enter"&&signIn()}/></label><p className="login-hint">Prefilled with the platform-prebuilt pilot identity (loaded on this deployment). To open a tenant project instead, ask an admin for its User ID / Tenant / Project ID — every request is authorised server-side against that exact triple.</p>{notice&&<p className="form-error">{notice}</p>}<button className="signin" onClick={signIn}>Enter workspace <span>→</span></button><footer><span>● Systems operational</span><span>Protected workspace</span></footer></section></div>;
 
   const activeOutcomes = runs.filter(r=>r.status==="success").length;
   const filteredDocs = docs.filter(d=>d.filename.toLowerCase().includes(docSearch.trim().toLowerCase()));
