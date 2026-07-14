@@ -20,7 +20,8 @@ fastembed>=0.4.0
 # Orchestration
 langgraph>=0.2.0
 
-# Ingestion parsers
+# Ingestion parsers + FreshRetailNet parquet
 pypdf>=5.0.0
 python-docx>=1.1.0
 openpyxl>=3.1.0
+pyarrow>=15.0.0

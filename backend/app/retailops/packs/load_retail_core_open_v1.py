@@ -19,9 +19,23 @@ from app.retailops.packs.retail_core_open_v1.registry import load_manifest, rele
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Load retail_core_open_v1 content release")
-    parser.add_argument("--profile", default="pilot", choices=["pilot", "mini"])
+    parser.add_argument(
+        "--profile",
+        default="pilot",
+        choices=["pilot", "mini", "full"],
+        help="mini/pilot use committed fixtures; full acquires official sources over HTTPS",
+    )
     parser.add_argument("--skip-migrations", action="store_true")
-    parser.add_argument("--acquire-uci", action="store_true", help="Download full UCI zip when possible")
+    parser.add_argument(
+        "--acquire-uci",
+        action="store_true",
+        help="Download full UCI zip (implied by --profile full)",
+    )
+    parser.add_argument(
+        "--acquire-fresh",
+        action="store_true",
+        help="Download FreshRetailNet parquet (implied by --profile full)",
+    )
     parser.add_argument(
         "--text-fixtures-dir",
         default="",
@@ -30,11 +44,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--force-text", action="store_true")
     args = parser.parse_args(argv)
 
+    full = args.profile == "full"
+    acquire_uci = args.acquire_uci or full
+    acquire_fresh = args.acquire_fresh or full
+
     if not args.skip_migrations:
         upgrade_to_head()
     init_engine()
 
-    fixture_map = {}
+    fixture_map: dict[str, Path] = {}
     if args.text_fixtures_dir:
         base = Path(args.text_fixtures_dir)
         for sid in ("fda_food_code_2022", "osha_retail_grocery_2009", "ftc_advertising_faqs"):
@@ -44,8 +62,9 @@ def main(argv: list[str] | None = None) -> int:
                     fixture_map[sid] = p
                     break
 
-    # Always create offline-safe mini text fixtures if none provided.
-    if not fixture_map:
+    # Offline profiles: always use committed mini text fixtures when none provided.
+    prefer_network = full and not fixture_map
+    if not fixture_map and not prefer_network:
         mini = Path(__file__).resolve().parent / "retail_core_open_v1" / "fixtures_min" / "text"
         if mini.exists():
             for sid in ("fda_food_code_2022", "osha_retail_grocery_2009", "ftc_advertising_faqs"):
@@ -53,14 +72,27 @@ def main(argv: list[str] | None = None) -> int:
                 if p.exists():
                     fixture_map[sid] = p
 
-    report = {"identity": release_identity(), "manifest_sources": len(load_manifest()["sources"])}
+    report = {
+        "identity": release_identity(),
+        "manifest_sources": len(load_manifest()["sources"]),
+        "profile": args.profile,
+    }
     with session_scope() as session:
-        report["text"] = ingest_all_text(session, fixture_map=fixture_map or None, force=args.force_text)
-        report["freshretailnet"] = load_freshretailnet(session, use_mini_fixture=True)
+        report["text"] = ingest_all_text(
+            session,
+            fixture_map=fixture_map or None,
+            force=args.force_text or full,
+            prefer_network=prefer_network,
+        )
+        report["freshretailnet"] = load_freshretailnet(
+            session,
+            use_mini_fixture=not acquire_fresh,
+            acquire=acquire_fresh,
+        )
         report["uci"] = load_uci_online_retail_ii(
             session,
-            use_mini_fixture=not args.acquire_uci,
-            acquire=args.acquire_uci,
+            use_mini_fixture=not acquire_uci,
+            acquire=acquire_uci,
         )
         report["summaries"] = generate_summaries(session)
 

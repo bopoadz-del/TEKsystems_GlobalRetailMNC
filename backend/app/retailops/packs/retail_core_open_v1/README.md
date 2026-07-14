@@ -19,9 +19,14 @@ Governed open retail content release for TEKsystems RetailOps.
 ```bash
 cd backend
 export RETAILOPS_EMBED_BACKEND=hash   # or fastembed for real vectors
+# Offline / CI
 PYTHONPATH=. python -m app.retailops.packs.load_retail_core_open_v1 --profile mini
+# Full: HTTPS acquire FDA/OSHA/FTC + FreshRetailNet parquet + UCI zip, then embed
+PYTHONPATH=. python -m app.retailops.packs.load_retail_core_open_v1 --profile full --force-text
 ```
 
 Inspect: `GET /v1/packs/retail_core_open_v1`
 
 Raw transaction/sales rows are **never** embedded. Only controlled summaries enter pgvector.
+
+When FDA blocks egress, acquire falls back to Wayback mirrors, then to `seeds/fda_food_code_2022.pdf`.

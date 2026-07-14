@@ -115,6 +115,7 @@ def ingest_text_source(
     *,
     fixture_path: Optional[Path] = None,
     force: bool = False,
+    prefer_network: bool = False,
 ) -> Dict[str, Any]:
     meta = get_source(source_id)
     if not meta or meta.get("structured_or_text") != "text":
@@ -122,8 +123,9 @@ def ingest_text_source(
 
     project_id = ensure_platform_project(session)
 
-    # Prefer committed mini text fixtures for reproducible pilots; network is optional.
-    if fixture_path is None:
+    # Mini fixtures are for offline/tests only. Full profile acquires from network
+    # (or seed/) so official PDF/HTML checksums enter the platform corpus.
+    if fixture_path is None and not prefer_network:
         mini = Path(__file__).resolve().parents[1] / "fixtures_min" / "text"
         for ext in (".txt", ".md", ".html", ".pdf"):
             candidate = mini / f"{source_id}{ext}"
@@ -134,24 +136,37 @@ def ingest_text_source(
     try:
         acq = acquire_source(source_id, fixture_path=fixture_path, force=force)
     except Exception as exc:
-        if fixture_path is None:
-            raise
-        # Network failure after empty fixture discovery — re-raise.
-        raise RuntimeError(f"acquire failed for {source_id}: {exc}") from exc
+        if prefer_network and fixture_path is None:
+            # Last resort: mini fixture for resilience, tagged as degraded.
+            mini = Path(__file__).resolve().parents[1] / "fixtures_min" / "text"
+            for ext in (".txt", ".md", ".html", ".pdf"):
+                candidate = mini / f"{source_id}{ext}"
+                if candidate.exists():
+                    fixture_path = candidate
+                    break
+            if fixture_path is not None:
+                acq = acquire_source(source_id, fixture_path=fixture_path, force=force)
+                acq["warnings"] = list(acq.get("warnings") or []) + [
+                    f"network_acquire_failed_fallback_mini:{exc}"
+                ]
+            else:
+                raise RuntimeError(f"acquire failed for {source_id}: {exc}") from exc
+        else:
+            raise RuntimeError(f"acquire failed for {source_id}: {exc}") from exc
 
     path = Path(acq["path"])
     data = path.read_bytes()
     checksum = acq["content_checksum"]
 
-    # Infer filename for parser from fixture/original suffix.
+    # Infer filename for parser from fixture/original suffix / magic bytes.
     if fixture_path is not None:
         filename = f"{source_id}{fixture_path.suffix or '.txt'}"
     else:
-        url = acq.get("resolved_download_url") or ""
-        ctype = acq.get("content_type") or ""
-        if "pdf" in ctype or url.lower().endswith(".pdf"):
+        url = (acq.get("resolved_download_url") or "").lower()
+        ctype = (acq.get("content_type") or "").lower()
+        if data[:4] == b"%PDF" or "pdf" in ctype or url.endswith(".pdf"):
             filename = f"{source_id}.pdf"
-        elif "html" in ctype or url.lower().endswith((".html", ".htm")):
+        elif b"<html" in data[:800].lower() or "html" in ctype or url.endswith((".html", ".htm")):
             filename = f"{source_id}.html"
         else:
             filename = f"{source_id}.txt"
@@ -180,7 +195,20 @@ def ingest_text_source(
             "status": "idempotent_skip",
         }
 
-    if existing and force:
+    # Drop prior embeddings for this source_id under the release (e.g. mini → full).
+    if force:
+        prior = session.execute(
+            select(Document).where(
+                Document.tenant_id == PLATFORM_TENANT_ID,
+                Document.project_id == project_id,
+            )
+        ).scalars().all()
+        for doc in prior:
+            meta_doc = doc.meta or {}
+            if meta_doc.get("release_id") == RELEASE_ID and meta_doc.get("source_id") == source_id:
+                session.delete(doc)
+        session.flush()
+    elif existing:
         session.delete(existing)
         session.flush()
 
@@ -288,9 +316,18 @@ def ingest_all_text(
     *,
     fixture_map: Optional[Dict[str, Path]] = None,
     force: bool = False,
+    prefer_network: bool = False,
 ) -> List[Dict[str, Any]]:
     out = []
     for sid in ("fda_food_code_2022", "osha_retail_grocery_2009", "ftc_advertising_faqs"):
         fp = (fixture_map or {}).get(sid)
-        out.append(ingest_text_source(session, sid, fixture_path=fp, force=force))
+        out.append(
+            ingest_text_source(
+                session,
+                sid,
+                fixture_path=fp,
+                force=force,
+                prefer_network=prefer_network and fp is None,
+            )
+        )
     return out

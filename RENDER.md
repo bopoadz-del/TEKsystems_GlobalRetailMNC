@@ -68,7 +68,13 @@ Copy a returned project id into the UI (header / Overview paste).
 
 ## retail_core_open_v1 on Render
 
-After deploy, one-off job:
+After deploy, one-off job for **full** official-source acquire + index:
+
+```bash
+python -m app.retailops.packs.load_retail_core_open_v1 --profile full --force-text
+```
+
+Mini/offline:
 
 ```bash
 python -m app.retailops.packs.load_retail_core_open_v1 --profile mini

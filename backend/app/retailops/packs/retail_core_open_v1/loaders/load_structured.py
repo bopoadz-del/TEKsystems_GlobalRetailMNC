@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -21,12 +22,14 @@ from app.retailops.models import (
 )
 from app.retailops.packs.retail_core_open_v1 import RELEASE_ID
 from app.retailops.packs.retail_core_open_v1.fixtures_min import MINI_FRESH_ROWS, MINI_UCI_ROWS
-from app.retailops.packs.retail_core_open_v1.loaders.acquire import acquire_source, cache_dir
+from app.retailops.packs.retail_core_open_v1.loaders.acquire import acquire_source
 from app.retailops.packs.retail_core_open_v1.registry import get_source
 
 FRESH_SOURCE = "freshretailnet_50k"
 UCI_SOURCE = "uci_online_retail_ii"
 PILOT_STORE_LIMIT = 50
+# Cap UCI historical load for starter DB/job runtime while still using the full zip.
+UCI_FULL_ROW_CAP = int(os.getenv("RETAILOPS_UCI_ROW_CAP", "250000"))
 
 
 def _id(*parts: Any) -> str:
@@ -68,34 +71,82 @@ def select_fresh_pilot_stores(store_ids: Sequence[int], limit: int = PILOT_STORE
     return sorted({int(s) for s in store_ids})[:limit]
 
 
+def _rows_from_fresh_parquet(
+    train_path: Path, *, store_limit: int
+) -> Tuple[List[Dict[str, Any]], List[int], Dict[str, Any]]:
+    """Filter FreshRetailNet train parquet to the pilot store subset."""
+    import pyarrow as pa
+    import pyarrow.compute as pc
+    import pyarrow.parquet as pq
+
+    table = pq.read_table(train_path)
+    store_col = table.column("store_id")
+    all_stores = sorted(pc.unique(store_col).to_pylist())
+    allowed = select_fresh_pilot_stores(all_stores, limit=store_limit)
+    mask = pc.is_in(store_col, value_set=pa.array(allowed))
+    sub = table.filter(mask)
+    keep = [c for c in sub.column_names if c not in ("hours_sale", "hours_stock_status")]
+    sub = sub.select(keep)
+    rows = sub.to_pylist()
+    meta = {
+        "parquet_rows_total": table.num_rows,
+        "parquet_rows_subset": len(rows),
+        "parquet_stores_total": len(all_stores),
+        "train_parquet": str(train_path),
+    }
+    return rows, allowed, meta
+
+
 def load_freshretailnet(
     session: Session,
     *,
     rows: Optional[List[Dict[str, Any]]] = None,
     use_mini_fixture: bool = False,
+    acquire: bool = False,
     store_limit: int = PILOT_STORE_LIMIT,
 ) -> Dict[str, Any]:
-    """Load FreshRetailNet-shaped rows; default path uses mini fixture or provided rows.
-
-    Full HF parquet ingest can be wired when network + datasets are available;
-    the subset rule is always applied for reproducibility.
-    """
+    """Load FreshRetailNet-shaped rows with the deterministic 50-store pilot rule."""
     meta = get_source(FRESH_SOURCE) or {}
-    acquisition = {
+    acquisition: Dict[str, Any] = {
         **meta,
         "release_id": RELEASE_ID,
         "rag_pack_id": "retail_core_rag",
         "collection_id": "prebuilt_retail_core",
         "knowledge_layer": "structured_public_eval",
         "status": "ok",
-        "acquisition_method": "mini_fixture" if use_mini_fixture or rows is None else "provided_rows",
+        "acquisition_method": "mini_fixture",
     }
-    data = rows if rows is not None else list(MINI_FRESH_ROWS)
-    store_ids = [int(r["store_id"]) for r in data]
-    allowed = set(select_fresh_pilot_stores(store_ids, limit=store_limit))
-    filtered = [r for r in data if int(r["store_id"]) in allowed]
+    warnings: List[str] = []
 
-    # Clear previous release rows for this source (idempotent reload).
+    if rows is not None:
+        data = rows
+        acquisition["acquisition_method"] = "provided_rows"
+        store_ids = [int(r["store_id"]) for r in data]
+        allowed = select_fresh_pilot_stores(store_ids, limit=store_limit)
+        filtered = [r for r in data if int(r["store_id"]) in allowed]
+    elif acquire and not use_mini_fixture:
+        acq = acquire_source(FRESH_SOURCE)
+        acquisition.update(acq)
+        train = Path(acq.get("train_parquet") or "")
+        if not train.exists():
+            root = Path(acq["path"])
+            candidates = list(root.glob("**/fresh_train.parquet")) + list(
+                root.glob("**/train.parquet")
+            )
+            if not candidates:
+                raise FileNotFoundError("FreshRetailNet train parquet missing after acquire")
+            train = candidates[0]
+        filtered, allowed, pmeta = _rows_from_fresh_parquet(train, store_limit=store_limit)
+        acquisition.update(pmeta)
+        acquisition["acquisition_method"] = "https_parquet"
+    else:
+        data = list(MINI_FRESH_ROWS)
+        acquisition["acquisition_method"] = "mini_fixture"
+        warnings.append("fresh_loaded_from_mini_fixture")
+        store_ids = [int(r["store_id"]) for r in data]
+        allowed = select_fresh_pilot_stores(store_ids, limit=store_limit)
+        filtered = [r for r in data if int(r["store_id"]) in allowed]
+
     session.execute(
         delete(RetailSale).where(
             RetailSale.release_id == RELEASE_ID, RetailSale.source_id == FRESH_SOURCE
@@ -118,16 +169,22 @@ def load_freshretailnet(
             RetailProduct.release_id == RELEASE_ID, RetailProduct.source_id == FRESH_SOURCE
         )
     )
+    session.flush()
 
     products_seen: set = set()
     promo_keys: set = set()
+    batch_sales: List[RetailSale] = []
+    batch_stock: List[RetailStockStatus] = []
+    batch_promo: List[RetailPromotion] = []
+    batch_prod: List[RetailProduct] = []
+
     for i, r in enumerate(filtered):
         store = str(r["store_id"])
         sku = str(r["product_id"])
         dt = str(r["dt"])
         if sku not in products_seen:
             products_seen.add(sku)
-            session.add(
+            batch_prod.append(
                 RetailProduct(
                     id=_id(RELEASE_ID, FRESH_SOURCE, "prod", sku),
                     release_id=RELEASE_ID,
@@ -142,7 +199,7 @@ def load_freshretailnet(
                     },
                 )
             )
-        session.add(
+        batch_sales.append(
             RetailSale(
                 id=_id(RELEASE_ID, FRESH_SOURCE, "sale", store, sku, dt),
                 release_id=RELEASE_ID,
@@ -166,7 +223,7 @@ def load_freshretailnet(
             )
         )
         stockout_hours = int(r.get("stock_hour6_22_cnt") or 0)
-        session.add(
+        batch_stock.append(
             RetailStockStatus(
                 id=_id(RELEASE_ID, FRESH_SOURCE, "stock", store, sku, dt),
                 release_id=RELEASE_ID,
@@ -184,7 +241,7 @@ def load_freshretailnet(
             key = (store, sku, dt)
             if key not in promo_keys:
                 promo_keys.add(key)
-                session.add(
+                batch_promo.append(
                     RetailPromotion(
                         id=_id(RELEASE_ID, FRESH_SOURCE, "promo", store, sku, dt),
                         release_id=RELEASE_ID,
@@ -198,10 +255,25 @@ def load_freshretailnet(
                         meta={},
                     )
                 )
+        if len(batch_sales) >= 5000:
+            session.bulk_save_objects(batch_prod)
+            session.bulk_save_objects(batch_sales)
+            session.bulk_save_objects(batch_stock)
+            session.bulk_save_objects(batch_promo)
+            batch_prod, batch_sales, batch_stock, batch_promo = [], [], [], []
+            session.flush()
+
+    if batch_prod or batch_sales or batch_stock or batch_promo:
+        session.bulk_save_objects(batch_prod)
+        session.bulk_save_objects(batch_sales)
+        session.bulk_save_objects(batch_stock)
+        session.bulk_save_objects(batch_promo)
+        session.flush()
 
     acquisition["structured_row_count"] = len(filtered)
     acquisition["subset_store_ids"] = sorted(allowed)
     acquisition["subset_rule"] = f"store_id in {store_limit} smallest distinct store_ids"
+    acquisition["warnings"] = warnings
     _upsert_source(session, acquisition, rows=len(filtered))
     session.flush()
     return {
@@ -210,17 +282,18 @@ def load_freshretailnet(
         "stores": sorted(allowed),
         "products": len(products_seen),
         "promotions": len(promo_keys),
+        "warnings": warnings,
     }
 
 
-def _parse_uci_xlsx_bytes(data: bytes) -> Tuple[List[Dict[str, Any]], List[str]]:
+def _parse_uci_xlsx_bytes(
+    data: bytes, *, row_cap: Optional[int] = None
+) -> Tuple[List[Dict[str, Any]], List[str]]:
     import openpyxl
 
     warnings: List[str] = []
-    # UCI zip contains xlsx; accept raw xlsx or zip.
     xlsx_bytes = data
     if data[:2] == b"PK" and b"[Content_Types].xml" not in data[:4096]:
-        # Likely a zip of the dataset.
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             names = [n for n in zf.namelist() if n.lower().endswith(".xlsx")]
             if not names:
@@ -235,20 +308,26 @@ def _parse_uci_xlsx_bytes(data: bytes) -> Tuple[List[Dict[str, Any]], List[str]]
         for i, row in enumerate(ws.iter_rows(values_only=True)):
             values = list(row)
             if headers is None:
-                headers = [str(c).strip() if c is not None else f"col{j}" for j, c in enumerate(values)]
+                headers = [
+                    str(c).strip() if c is not None else f"col{j}" for j, c in enumerate(values)
+                ]
                 continue
             if not any(values):
                 continue
             rec = {headers[j]: values[j] for j in range(min(len(headers), len(values)))}
             rec["_sheet"] = sheet
             rec["_row"] = i
-            # Normalize common UCI headers.
             invoice = str(rec.get("Invoice") or rec.get("InvoiceNo") or "").strip()
             sku = str(rec.get("StockCode") or "").strip()
             if not invoice or not sku:
                 rejected += 1
                 continue
             rows_out.append(rec)
+            if row_cap is not None and len(rows_out) >= row_cap:
+                warnings.append(f"uci_row_cap_applied={row_cap}")
+                if rejected:
+                    warnings.append(f"rejected_malformed_rows={rejected}")
+                return rows_out, warnings
     if rejected:
         warnings.append(f"rejected_malformed_rows={rejected}")
     return rows_out, warnings
@@ -260,6 +339,7 @@ def load_uci_online_retail_ii(
     rows: Optional[List[Dict[str, Any]]] = None,
     use_mini_fixture: bool = False,
     acquire: bool = False,
+    row_cap: Optional[int] = None,
 ) -> Dict[str, Any]:
     meta = get_source(UCI_SOURCE) or {}
     warnings: List[str] = []
@@ -272,6 +352,8 @@ def load_uci_online_retail_ii(
         "status": "ok",
     }
 
+    cap = UCI_FULL_ROW_CAP if row_cap is None else row_cap
+
     if rows is not None:
         data = rows
         acquisition["acquisition_method"] = "provided_rows"
@@ -283,7 +365,7 @@ def load_uci_online_retail_ii(
         acq = acquire_source(UCI_SOURCE)
         acquisition.update(acq)
         path = Path(acq["path"])
-        data, w = _parse_uci_xlsx_bytes(path.read_bytes())
+        data, w = _parse_uci_xlsx_bytes(path.read_bytes(), row_cap=cap)
         warnings.extend(w)
 
     session.execute(
@@ -297,9 +379,12 @@ def load_uci_online_retail_ii(
             RetailProduct.release_id == RELEASE_ID, RetailProduct.source_id == UCI_SOURCE
         )
     )
+    session.flush()
 
     products_seen: set = set()
     cancellations = 0
+    batch_txn: List[RetailTransaction] = []
+    batch_prod: List[RetailProduct] = []
     for i, r in enumerate(data):
         invoice = str(r.get("Invoice") or r.get("InvoiceNo") or "").strip()
         sku = str(r.get("StockCode") or "").strip()
@@ -309,7 +394,7 @@ def load_uci_online_retail_ii(
             cancellations += 1
         if sku and sku not in products_seen:
             products_seen.add(sku)
-            session.add(
+            batch_prod.append(
                 RetailProduct(
                     id=_id(RELEASE_ID, UCI_SOURCE, "prod", sku),
                     release_id=RELEASE_ID,
@@ -322,7 +407,7 @@ def load_uci_online_retail_ii(
                     },
                 )
             )
-        session.add(
+        batch_txn.append(
             RetailTransaction(
                 id=_id(RELEASE_ID, UCI_SOURCE, "txn", invoice, sku, i),
                 release_id=RELEASE_ID,
@@ -341,6 +426,16 @@ def load_uci_online_retail_ii(
                 meta={"usage": "historical evaluation and demonstration data"},
             )
         )
+        if len(batch_txn) >= 5000:
+            session.bulk_save_objects(batch_prod)
+            session.bulk_save_objects(batch_txn)
+            batch_prod, batch_txn = [], []
+            session.flush()
+
+    if batch_prod or batch_txn:
+        session.bulk_save_objects(batch_prod)
+        session.bulk_save_objects(batch_txn)
+        session.flush()
 
     acquisition["structured_row_count"] = len(data)
     acquisition["warnings"] = warnings
@@ -366,7 +461,6 @@ def inventory_rows_from_sql(session: Session, *, release_id: str = RELEASE_ID) -
             select(RetailStockStatus).where(RetailStockStatus.release_id == release_id)
         ).scalars().all()
     }
-    # Aggregate latest day per store×sku.
     latest: Dict[Tuple[str, str], RetailSale] = {}
     for s in sales:
         key = (s.store_id, s.sku)
@@ -378,7 +472,6 @@ def inventory_rows_from_sql(session: Session, *, release_id: str = RELEASE_ID) -
     for (store, sku), s in latest.items():
         st = stock.get((store, sku, s.sale_date))
         stockout_h = int(st.stockout_hours or 0) if st else 0
-        # Proxy on_hand: high stockout hours => low on-hand.
         on_hand = max(0, 16 - stockout_h)
         rows.append(
             {
