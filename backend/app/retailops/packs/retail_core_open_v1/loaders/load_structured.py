@@ -360,51 +360,64 @@ def _iter_uci_records(
     warnings: List[str] = []
     raw = path.read_bytes()
     xlsx_bytes = raw
-    if raw[:2] == b"PK" and b"[Content_Types].xml" not in raw[:4096]:
-        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
-            names = [n for n in zf.namelist() if n.lower().endswith(".xlsx")]
-            if not names:
-                raise ValueError("UCI zip contained no xlsx")
-            xlsx_bytes = zf.read(names[0])
-    # Drop raw zip bytes before workbook parse.
+    if raw[:2] == b"PK":
+        # Prefer explicit member scan — compressed nested xlsx bytes can contain the
+        # literal "[Content_Types].xml" string and fool a prefix heuristic.
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                names = zf.namelist()
+                xlsx_names = [n for n in names if n.lower().endswith(".xlsx")]
+                if xlsx_names:
+                    xlsx_bytes = zf.read(xlsx_names[0])
+                elif "[Content_Types].xml" not in names and "[Content_Types].xml" not in {
+                    n.lstrip("/") for n in names
+                }:
+                    raise ValueError("UCI archive is neither an xlsx nor a zip of xlsx")
+                # else: raw itself is already an OOXML workbook
+        except zipfile.BadZipFile as exc:
+            raise ValueError(f"UCI file is not a zip/xlsx: {path}") from exc
+    # Drop outer archive bytes before workbook parse.
     del raw
 
     def _gen() -> Iterable[Dict[str, Any]]:
         wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes), read_only=True, data_only=True)
         rejected = 0
         yielded = 0
-        for sheet in wb.sheetnames:
-            ws = wb[sheet]
-            headers = None
-            for i, row in enumerate(ws.iter_rows(values_only=True)):
-                values = list(row)
-                if headers is None:
-                    headers = [
-                        str(c).strip() if c is not None else f"col{j}"
-                        for j, c in enumerate(values)
-                    ]
-                    continue
-                if not any(values):
-                    continue
-                rec = {headers[j]: values[j] for j in range(min(len(headers), len(values)))}
-                rec["_sheet"] = sheet
-                rec["_row"] = i
-                invoice = str(rec.get("Invoice") or rec.get("InvoiceNo") or "").strip()
-                sku = str(rec.get("StockCode") or "").strip()
-                if not invoice or not sku:
-                    rejected += 1
-                    continue
-                yield rec
-                yielded += 1
-                if row_cap is not None and yielded >= row_cap:
-                    warnings.append(f"uci_row_cap_applied={row_cap}")
-                    if rejected:
-                        warnings.append(f"rejected_malformed_rows={rejected}")
-                    wb.close()
-                    return
-        if rejected:
-            warnings.append(f"rejected_malformed_rows={rejected}")
-        wb.close()
+        try:
+            for sheet in wb.sheetnames:
+                ws = wb[sheet]
+                headers = None
+                for i, row in enumerate(ws.iter_rows(values_only=True)):
+                    values = list(row)
+                    if headers is None:
+                        headers = [
+                            str(c).strip() if c is not None else f"col{j}"
+                            for j, c in enumerate(values)
+                        ]
+                        continue
+                    if not any(values):
+                        continue
+                    rec = {
+                        headers[j]: values[j] for j in range(min(len(headers), len(values)))
+                    }
+                    rec["_sheet"] = sheet
+                    rec["_row"] = i
+                    invoice = str(rec.get("Invoice") or rec.get("InvoiceNo") or "").strip()
+                    sku = str(rec.get("StockCode") or "").strip()
+                    if not invoice or not sku:
+                        rejected += 1
+                        continue
+                    yield rec
+                    yielded += 1
+                    if row_cap is not None and yielded >= row_cap:
+                        warnings.append(f"uci_row_cap_applied={row_cap}")
+                        if rejected:
+                            warnings.append(f"rejected_malformed_rows={rejected}")
+                        return
+            if rejected:
+                warnings.append(f"rejected_malformed_rows={rejected}")
+        finally:
+            wb.close()
 
     return _gen(), warnings
 
