@@ -25,6 +25,12 @@ def main(argv: list[str] | None = None) -> int:
         choices=["pilot", "mini", "full"],
         help="mini/pilot use committed fixtures; full acquires official sources over HTTPS",
     )
+    parser.add_argument(
+        "--only",
+        default="all",
+        choices=["all", "text", "structured", "summaries"],
+        help="Run a subset (text=BGE RAG ingest; structured=SQL; summaries=controlled RAG)",
+    )
     parser.add_argument("--skip-migrations", action="store_true")
     parser.add_argument(
         "--acquire-uci",
@@ -47,6 +53,9 @@ def main(argv: list[str] | None = None) -> int:
     full = args.profile == "full"
     acquire_uci = args.acquire_uci or full
     acquire_fresh = args.acquire_fresh or full
+    do_text = args.only in ("all", "text")
+    do_structured = args.only in ("all", "structured")
+    do_summaries = args.only in ("all", "summaries")
 
     if not args.skip_migrations:
         upgrade_to_head()
@@ -62,7 +71,6 @@ def main(argv: list[str] | None = None) -> int:
                     fixture_map[sid] = p
                     break
 
-    # Offline profiles: always use committed mini text fixtures when none provided.
     prefer_network = full and not fixture_map
     if not fixture_map and not prefer_network:
         mini = Path(__file__).resolve().parent / "retail_core_open_v1" / "fixtures_min" / "text"
@@ -76,25 +84,33 @@ def main(argv: list[str] | None = None) -> int:
         "identity": release_identity(),
         "manifest_sources": len(load_manifest()["sources"]),
         "profile": args.profile,
+        "only": args.only,
     }
-    with session_scope() as session:
-        report["text"] = ingest_all_text(
-            session,
-            fixture_map=fixture_map or None,
-            force=args.force_text or full,
-            prefer_network=prefer_network,
-        )
-        report["freshretailnet"] = load_freshretailnet(
-            session,
-            use_mini_fixture=not acquire_fresh,
-            acquire=acquire_fresh,
-        )
-        report["uci"] = load_uci_online_retail_ii(
-            session,
-            use_mini_fixture=not acquire_uci,
-            acquire=acquire_uci,
-        )
-        report["summaries"] = generate_summaries(session)
+
+    # Separate sessions per stage so each commits and releases memory.
+    if do_text:
+        with session_scope() as session:
+            report["text"] = ingest_all_text(
+                session,
+                fixture_map=fixture_map or None,
+                force=args.force_text or full,
+                prefer_network=prefer_network,
+            )
+    if do_structured:
+        with session_scope() as session:
+            report["freshretailnet"] = load_freshretailnet(
+                session,
+                use_mini_fixture=not acquire_fresh,
+                acquire=acquire_fresh,
+            )
+            report["uci"] = load_uci_online_retail_ii(
+                session,
+                use_mini_fixture=not acquire_uci,
+                acquire=acquire_uci,
+            )
+    if do_summaries:
+        with session_scope() as session:
+            report["summaries"] = generate_summaries(session)
 
     print(json.dumps(report, indent=2, default=str))
     return 0

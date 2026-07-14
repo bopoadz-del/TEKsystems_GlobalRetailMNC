@@ -237,10 +237,26 @@ def ingest_text_source(
     }
 
     embedder = get_embedder()
-    texts = [u.text for u in units]
-    # Live path: FastEmbedProvider bulk-embeds with BAAI/bge-small-en-v1.5.
-    vectors = embedder.embed_batch(texts) if texts else []
     embedding_model = getattr(embedder, "model_name", None) or embedder.__class__.__name__
+    batch_size = int(getattr(embedder, "batch_size", 64) or 64)
+
+    # Final sanitize — PDF extractors still leave NULs past some parse paths.
+    clean_units: List[ParsedUnit] = []
+    for u in units:
+        text = (u.text or "").replace("\x00", "").strip()
+        if len(text) < 40:
+            continue
+        clean_units.append(
+            ParsedUnit(
+                text=text,
+                page=u.page,
+                unit_type=u.unit_type,
+                sheet=u.sheet,
+                row_start=u.row_start,
+                row_end=u.row_end,
+            )
+        )
+    units = clean_units
 
     doc = Document(
         id=document_id,
@@ -252,30 +268,39 @@ def ingest_text_source(
         status="processed",
         page_count=max((u.page or 0) for u in units) if units else None,
         chunk_count=len(units),
-        meta=lineage,
+        meta={**lineage, "embedding_model": embedding_model},
     )
     session.add(doc)
-    for i, (unit, vector) in enumerate(zip(units, vectors)):
-        session.add(
-            DocumentChunk(
-                id=_chunk_id(document_id, i, unit.text),
-                tenant_id=PLATFORM_TENANT_ID,
-                project_id=project_id,
-                document_id=document_id,
-                chunk_ordinal=i,
-                text=unit.text,
-                embedding=vector,
-                source_filename=filename,
-                page=unit.page,
-                meta={
-                    **lineage,
-                    "section": unit.text.split("\n", 1)[0][:120],
-                    "embedding_model": embedding_model,
-                    "embedding_dimension": embedder.dim,
-                },
-            )
-        )
     session.flush()
+
+    # Bulk BGE embed + insert in micro-batches (avoids OOM on full PDFs).
+    for start in range(0, len(units), batch_size):
+        batch = units[start : start + batch_size]
+        texts = [u.text for u in batch]
+        vectors = embedder.embed_batch(texts)
+        for offset, (unit, vector) in enumerate(zip(batch, vectors)):
+            i = start + offset
+            section = unit.text.split("\n", 1)[0][:120].replace("\x00", "")
+            session.add(
+                DocumentChunk(
+                    id=_chunk_id(document_id, i, unit.text),
+                    tenant_id=PLATFORM_TENANT_ID,
+                    project_id=project_id,
+                    document_id=document_id,
+                    chunk_ordinal=i,
+                    text=unit.text,
+                    embedding=vector,
+                    source_filename=filename,
+                    page=unit.page,
+                    meta={
+                        **lineage,
+                        "section": section,
+                        "embedding_model": embedding_model,
+                        "embedding_dimension": embedder.dim,
+                    },
+                )
+            )
+        session.flush()
 
     # Governance row
     pk = "r_" + hashlib.sha256(f"{RELEASE_ID}|{source_id}|src".encode()).hexdigest()[:24]
