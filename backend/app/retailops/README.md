@@ -39,6 +39,67 @@ as a **local kit snapshot** under `backend/app/retailops/kit/`.
 - Hybrid retrieval: pgvector cosine + Postgres `ts_rank_cd` fused with RRF.
   Tenant + project filters apply before fusion (fail-closed).
 
+## Enterprise integrations (pilot connectors)
+
+Eight visible connector cards behind one shared, provider-abstraction-style
+contract (see `app/retailops/providers.py` for the LLM analogue):
+`app/retailops/integrations/base.py` defines `RetailConnector` — every
+connector implements `health()`, `test_connection()`, `pull()`,
+`normalize()` and `push()`, and reports one of a closed status vocabulary:
+`disabled | mock | configured | connected | degraded | error`.
+
+**Signature layer:** `POS + ERP + WMS + Supplier EDI → RetailOps AI → Store
+Digital Twin + Power BI + ServiceNow`. RetailOps AI is the RAG/action
+runtime already documented above; the connectors in this section are its
+inbound (POS/ERP/WMS/EDI) and outbound (Digital Twin/Power BI/ServiceNow)
+integration surface.
+
+| Connector | Card | Mode | Notes |
+|---|---|---|---|
+| `pos` | POS | **Mock-functional** | NCR / Toshiba / D365 Commerce / Generic — deterministic transactions, sales by SKU, returns, discounts |
+| `inventory_wms` | Inventory & WMS | **Mock-functional** | Manhattan / Blue Yonder / RELEX / Generic — on-hand/available/reserved, reorder/safety, soft-wired to `retail.analyse_inventory_risk` via `to_inventory_risk_rows()` |
+| `supplier_edi` | Supplier / EDI | **Mock-functional** | Ariba / EDI 850/856/810 / Portal — orders, promised vs. actual delivery, short/damaged/rejected notices |
+| `power_bi` | Power BI | **Mock-functional** | Real CSV/XLSX export (openpyxl); dataset publish + semantic-model refresh are honest stubs; embed URL is an explicit placeholder |
+| `sap_erp` | SAP / ERP | Honest stub | Not connected; planned capability, no vendor adapter |
+| `crm_loyalty` | CRM & Loyalty | Honest stub | Not connected; read-only, returns a tiny illustrative sample on sync (not a live feed) |
+| `store_digital_twin` | Store Digital Twin | Honest stub | Not connected; planogram record shape documented (`PLANOGRAM_RECORD_SHAPE`), no live adapter |
+| `entra_id` | Microsoft Entra ID | Honest stub | Not connected; SSO/role/group mapping planned — RetailOps currently uses server-resolved `X-User-Id`/`X-Tenant-Id`/`X-Project-Id` headers |
+
+No real credentials are hardcoded anywhere in `app/retailops/integrations/`.
+Each connector reads optional configuration from environment variables
+(`RETAILOPS_POS_*`, `RETAILOPS_WMS_*`, `RETAILOPS_EDI_*`,
+`RETAILOPS_POWERBI_*`, `RETAILOPS_SAP_*`, `RETAILOPS_CRM_*`,
+`RETAILOPS_DIGITAL_TWIN_*`, `RETAILOPS_ENTRA_*`) and degrades honestly
+(`mock`/`disabled`) when they are absent — connector failures always raise
+`ConnectorError`, never fabricated vendor data.
+
+**Persistence note:** test/sync run history
+(`app/retailops/integrations/runs.py`) is an in-process, in-memory ring
+buffer per (tenant, project, connector) for this pilot — it does **not**
+survive a process restart. It is shaped like an audit record so it can be
+promoted to a real `integration_runs` table (with an Alembic migration)
+without changing the `/v1/integrations/*` API contract.
+
+**Deferred connectors** (documented, not shipped as pilot cards to avoid
+clutter): ServiceNow (incident/ticket sync from operations briefs), Store
+Task / Workforce management, and a generic Enterprise Data Platform export
+lane. These sit downstream of the same `RetailConnector` contract and can be
+added as additional cards without any router change.
+
+API:
+
+```
+GET  /v1/integrations
+GET  /v1/integrations/{connector_id}
+POST /v1/integrations/{connector_id}/test
+POST /v1/integrations/{connector_id}/sync
+GET  /v1/integrations/{connector_id}/runs
+```
+
+UI: the **Integrations** tab in the business frontend renders all eight
+cards with status badges and Test/Sync actions (mock-functional connectors)
+or disabled, honestly-labelled CTAs (stub connectors).
+
 ## Actions (local kit snapshot)
 
 Namespaced deliverables — adding one requires **no** router change:

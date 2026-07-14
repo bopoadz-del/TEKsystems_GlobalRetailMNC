@@ -56,6 +56,39 @@ export interface ActionResult {
   error_message?: string;
 }
 
+export interface IntegrationBadge {
+  label: string;
+  tone: string;
+}
+
+export interface IntegrationRun {
+  run_id: string;
+  kind: "test" | "sync";
+  status: string;
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  detail?: Record<string, unknown>;
+  error_code?: string | null;
+  error_message?: string | null;
+}
+
+export interface Integration {
+  connector_id: string;
+  display_name: string;
+  category: string;
+  description: string;
+  vendor_examples: string[];
+  capabilities: string[];
+  planned_capabilities: string[];
+  read_only: boolean;
+  mock_functional: boolean;
+  status: string;
+  badges: IntegrationBadge[];
+  last_test: IntegrationRun | null;
+  last_sync: IntegrationRun | null;
+}
+
 export const api = {
   overview: (p: Principal) => req<{ document_count: number; recent_actions: { action_id: string; status: string; started_at: string }[]; system_health: Record<string, unknown> }>("/v1/overview", p),
   documents: (p: Principal) => req<{ documents: { document_id: string; filename: string; status: string; chunk_count: number; doc_role?: string; error?: string }[] }>("/v1/documents", p),
@@ -76,4 +109,14 @@ export const api = {
       body: JSON.stringify({ arguments: args, auto_context: true, confirm }),
     }),
   audit: (p: Principal) => req<{ runs: { request_id: string; action_id: string; user_id: string; status: string; started_at: string; duration_ms: number; evidence_count: number }[] }>("/v1/audit", p),
+  integrations: (p: Principal) => req<{ integrations: Integration[] }>("/v1/integrations", p),
+  testIntegration: (p: Principal, connectorId: string) =>
+    req<Record<string, unknown>>(`/v1/integrations/${connectorId}/test`, p, { method: "POST" }),
+  syncIntegration: (p: Principal, connectorId: string, body: Record<string, unknown> = {}) =>
+    req<Record<string, unknown>>(`/v1/integrations/${connectorId}/sync`, p, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  integrationRuns: (p: Principal, connectorId: string) =>
+    req<{ runs: IntegrationRun[] }>(`/v1/integrations/${connectorId}/runs`, p),
 };

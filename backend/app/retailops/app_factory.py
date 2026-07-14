@@ -21,6 +21,7 @@ from sqlalchemy import text
 from app.retailops import BLOCKS_COMMIT, KIT_SNAPSHOT_ID, RETAILOPS_VERSION
 from app.retailops.api import router as api_router
 from app.retailops.db import get_engine, init_engine
+from app.retailops.integrations.routes import router as integrations_router
 
 logger = logging.getLogger("retailops")
 
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
         }
 
     app.include_router(api_router)
+    app.include_router(integrations_router)
 
     # Serve the business frontend when the Vite dist has been built into the image.
     if _FRONTEND_INDEX.is_file():
