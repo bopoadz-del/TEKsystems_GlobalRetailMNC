@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -173,20 +174,6 @@ def ingest_text_source(
         else:
             filename = f"{source_id}.txt"
 
-    # Normalize HTML to text units + section chunks.
-    if filename.endswith(".html") or b"<html" in data[:500].lower():
-        text = data.decode("utf-8", errors="replace")
-        text = re.sub(r"(?is)<script.*?>.*?</script>", " ", text)
-        text = re.sub(r"(?is)<style.*?>.*?</style>", " ", text)
-        text = re.sub(r"(?is)<[^>]+>", "\n", text)
-        text = _canon_text(text)
-        units = _section_chunks(text)
-    else:
-        parsed = parse_bytes(data, filename)
-        units = []
-        for u in parsed:
-            units.extend(_section_chunks(u.text, page=u.page))
-
     document_id = _doc_id(source_id, checksum)
     existing = session.get(Document, document_id)
     if existing and not force:
@@ -195,6 +182,7 @@ def ingest_text_source(
             "document_id": document_id,
             "chunk_count": existing.chunk_count,
             "status": "idempotent_skip",
+            "embedding_model": ((existing.meta or {}).get("embedding_model")),
         }
 
     # Drop prior embeddings for this source_id under the release (e.g. mini → full).
@@ -238,25 +226,10 @@ def ingest_text_source(
 
     embedder = get_embedder()
     embedding_model = getattr(embedder, "model_name", None) or embedder.__class__.__name__
-    batch_size = int(getattr(embedder, "batch_size", 64) or 64)
-
-    # Final sanitize — PDF extractors still leave NULs past some parse paths.
-    clean_units: List[ParsedUnit] = []
-    for u in units:
-        text = (u.text or "").replace("\x00", "").strip()
-        if len(text) < 40:
-            continue
-        clean_units.append(
-            ParsedUnit(
-                text=text,
-                page=u.page,
-                unit_type=u.unit_type,
-                sheet=u.sheet,
-                row_start=u.row_start,
-                row_end=u.row_end,
-            )
-        )
-    units = clean_units
+    batch_size = int(getattr(embedder, "batch_size", 32) or 32)
+    # Smaller batches on large official PDFs keep starter-instance RSS bounded.
+    if filename.endswith(".pdf"):
+        batch_size = min(batch_size, 24)
 
     doc = Document(
         id=document_id,
@@ -265,29 +238,34 @@ def ingest_text_source(
         filename=filename,
         content_type=acq.get("content_type") or "application/octet-stream",
         source_uri=acq.get("resolved_download_url"),
-        status="processed",
-        page_count=max((u.page or 0) for u in units) if units else None,
-        chunk_count=len(units),
+        status="processing",
+        page_count=None,
+        chunk_count=0,
         meta={**lineage, "embedding_model": embedding_model},
     )
     session.add(doc)
     session.flush()
 
-    # Bulk BGE embed + insert in micro-batches (avoids OOM on full PDFs).
-    for start in range(0, len(units), batch_size):
-        batch = units[start : start + batch_size]
-        texts = [u.text for u in batch]
+    # Stream parse → BGE embed → insert; expire ORM objects after each batch.
+    pending: List[ParsedUnit] = []
+    chunk_ordinal = 0
+    max_page = 0
+
+    def _flush_batch() -> None:
+        nonlocal pending, chunk_ordinal
+        if not pending:
+            return
+        texts = [u.text for u in pending]
         vectors = embedder.embed_batch(texts)
-        for offset, (unit, vector) in enumerate(zip(batch, vectors)):
-            i = start + offset
+        for unit, vector in zip(pending, vectors):
             section = unit.text.split("\n", 1)[0][:120].replace("\x00", "")
             session.add(
                 DocumentChunk(
-                    id=_chunk_id(document_id, i, unit.text),
+                    id=_chunk_id(document_id, chunk_ordinal, unit.text),
                     tenant_id=PLATFORM_TENANT_ID,
                     project_id=project_id,
                     document_id=document_id,
-                    chunk_ordinal=i,
+                    chunk_ordinal=chunk_ordinal,
                     text=unit.text,
                     embedding=vector,
                     source_filename=filename,
@@ -300,7 +278,56 @@ def ingest_text_source(
                     },
                 )
             )
+            chunk_ordinal += 1
+        pending = []
         session.flush()
+        session.expire_all()
+
+    if filename.endswith(".html") or b"<html" in data[:800].lower():
+        text = data.decode("utf-8", errors="replace")
+        text = re.sub(r"(?is)<script.*?>.*?</script>", " ", text)
+        text = re.sub(r"(?is)<style.*?>.*?</style>", " ", text)
+        text = re.sub(r"(?is)<[^>]+>", "\n", text)
+        unit_iter: Iterable[ParsedUnit] = _section_chunks(_canon_text(text))
+    elif filename.endswith(".pdf") or data[:4] == b"%PDF":
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(data))
+        # Clear raw bytes after PdfReader has parsed the xref (reader keeps structure).
+        data = b""
+
+        def _pdf_units() -> Iterable[ParsedUnit]:
+            for i, page in enumerate(reader.pages, start=1):
+                text = (page.extract_text() or "").replace("\x00", "").strip()
+                if text:
+                    yield from _section_chunks(text, page=i)
+
+        unit_iter = _pdf_units()
+    else:
+        unit_iter = (
+            u
+            for raw in parse_bytes(data, filename)
+            for u in _section_chunks((raw.text or "").replace("\x00", ""), page=raw.page)
+        )
+
+    for unit in unit_iter:
+        text = (unit.text or "").replace("\x00", "").strip()
+        if len(text) < 40:
+            continue
+        if unit.page:
+            max_page = max(max_page, int(unit.page))
+        pending.append(ParsedUnit(text=text, page=unit.page, unit_type="text"))
+        if len(pending) >= batch_size:
+            _flush_batch()
+    _flush_batch()
+
+    doc = session.get(Document, document_id)
+    if doc:
+        doc.status = "processed"
+        doc.chunk_count = chunk_ordinal
+        doc.page_count = max_page or None
+        doc.meta = {**(doc.meta or {}), **lineage, "embedding_model": embedding_model}
+    session.flush()
 
     # Governance row
     pk = "r_" + hashlib.sha256(f"{RELEASE_ID}|{source_id}|src".encode()).hexdigest()[:24]
@@ -326,7 +353,7 @@ def ingest_text_source(
             "embedding_batch": True,
         },
         document_count=1,
-        chunk_count=len(units),
+        chunk_count=chunk_ordinal,
         status="ingested",
     )
     if src_row:
@@ -338,7 +365,7 @@ def ingest_text_source(
     return {
         "source_id": source_id,
         "document_id": document_id,
-        "chunk_count": len(units),
+        "chunk_count": chunk_ordinal,
         "status": "ingested",
         "project_id": project_id,
         "embedding_model": embedding_model,

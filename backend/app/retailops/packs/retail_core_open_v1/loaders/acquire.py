@@ -229,32 +229,40 @@ def acquire_source(
                 prev["warnings"] = list(prev.get("warnings") or []) + ["idempotent_cache_hit"]
                 return prev
         errors: List[str] = []
-        urls = _candidate_urls(source_id, meta)
         ok = False
-        for url in urls:
-            try:
-                info = _download(
-                    url,
-                    dest,
-                    referer=str(meta.get("original_url") or ""),
-                )
-                # FDA must be a real PDF when sourced from network.
-                if source_id == "fda_food_code_2022" and not dest.read_bytes()[:4] == b"%PDF":
-                    errors.append(f"non-PDF from {url}")
-                    continue
-                if source_id == "fda_food_code_2022" and dest.stat().st_size < 2_000_000:
-                    errors.append(f"PDF too small ({dest.stat().st_size}) from {url}")
-                    continue
-                record.update(info)
+        # Prefer committed seed for large PDFs (FDA) to avoid download+parse RAM spike
+        # on starter job instances; seed is provenance-tagged.
+        if source_id == "fda_food_code_2022":
+            seeded = _try_seed(source_id, dest)
+            if seeded and dest.read_bytes()[:4] == b"%PDF" and dest.stat().st_size >= 2_000_000:
+                record.update(seeded)
                 record["status"] = "ok"
-                if "web.archive.org" in (info.get("resolved_download_url") or ""):
-                    record["warnings"] = list(record.get("warnings") or []) + [
-                        "acquired_via_wayback_mirror_of_official_fda_media"
-                    ]
                 ok = True
-                break
-            except Exception as exc:
-                errors.append(f"{url}: {exc}")
+        if not ok:
+            urls = _candidate_urls(source_id, meta)
+            for url in urls:
+                try:
+                    info = _download(
+                        url,
+                        dest,
+                        referer=str(meta.get("original_url") or ""),
+                    )
+                    if source_id == "fda_food_code_2022" and not dest.read_bytes()[:4] == b"%PDF":
+                        errors.append(f"non-PDF from {url}")
+                        continue
+                    if source_id == "fda_food_code_2022" and dest.stat().st_size < 2_000_000:
+                        errors.append(f"PDF too small ({dest.stat().st_size}) from {url}")
+                        continue
+                    record.update(info)
+                    record["status"] = "ok"
+                    if "web.archive.org" in (info.get("resolved_download_url") or ""):
+                        record["warnings"] = list(record.get("warnings") or []) + [
+                            "acquired_via_wayback_mirror_of_official_fda_media"
+                        ]
+                    ok = True
+                    break
+                except Exception as exc:
+                    errors.append(f"{url}: {exc}")
         if not ok:
             seeded = _try_seed(source_id, dest)
             if seeded:
