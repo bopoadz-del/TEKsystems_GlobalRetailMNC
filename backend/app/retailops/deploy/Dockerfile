@@ -19,12 +19,17 @@ FROM python:3.11-slim AS runtime
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    RETAILOPS_EMBED_BACKEND=fastembed
+    RETAILOPS_EMBED_BACKEND=fastembed \
+    HF_HUB_DISABLE_XET=1 \
+    HF_HOME=/app/.cache/huggingface \
+    FASTEMBED_CACHE_PATH=/app/.cache/fastembed
 
 WORKDIR /app
 
 COPY backend/app/retailops/deploy/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt \
+    && mkdir -p /app/.cache/huggingface /app/.cache/fastembed \
+    && python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BAAI/bge-small-en-v1.5')"
 
 # Application code (the FastAPI package root is /app/app).
 COPY backend/app /app/app
@@ -34,7 +39,8 @@ COPY backend/app/retailops/deploy/build_metadata.json /app/build_metadata.json
 COPY --from=frontend /fe/dist /app/app/retailops/frontend/dist
 
 # Non-root user.
-RUN useradd --create-home --uid 10001 retailops && chown -R retailops:retailops /app
+RUN useradd --create-home --uid 10001 retailops \
+    && chown -R retailops:retailops /app
 USER retailops
 
 EXPOSE 8000

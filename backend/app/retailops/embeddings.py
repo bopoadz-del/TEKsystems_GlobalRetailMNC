@@ -71,6 +71,10 @@ class FastEmbedProvider(EmbeddingProvider):  # pragma: no cover - optional heavy
     DEFAULT_BATCH_SIZE = 64
 
     def __init__(self, dim: int = EMBED_DIM, batch_size: int = DEFAULT_BATCH_SIZE) -> None:
+        import os
+
+        # HF xet CAS intermittently 401s unauthenticated downloads on Render.
+        os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
         from fastembed import TextEmbedding
         import numpy as np
 
