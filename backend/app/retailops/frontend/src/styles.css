@@ -68,4 +68,6 @@ button.linkish {
 .procedure-steps { margin: 6px 0 0 18px; padding: 0; color: var(--text); font-size: 13px; }
 .procedure-steps li { margin-bottom: 4px; }
 .learning-section h4 { margin: 14px 0 6px; font-size: 13px; color: var(--accent); }
+.putoff-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; font-size: 12px; }
+.putoff-row label { display: inline-flex; align-items: center; gap: 4px; }
 

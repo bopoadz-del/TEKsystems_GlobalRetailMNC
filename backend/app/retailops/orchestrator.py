@@ -58,12 +58,21 @@ class OrchestratorState(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 
 async def classify_request(state: OrchestratorState) -> Dict[str, Any]:
-    """Bootstrap node — preliminary pass; reasoner finalises routing."""
+    """Preliminary intent cues — final route still owned by the reasoner."""
+    from app.retailops.reasoning.reasoner import _score_intent
+
+    question = state.get("question") or ""
+    intent, confidence = _score_intent(question)
+    plan_seed = dict(state.get("execution_plan") or {})
+    plan_seed.setdefault("primary_intent", intent)
+    plan_seed.setdefault("confidence", confidence)
     return {
         "arguments": state.get("arguments", {}),
         "route": state.get("route") or "rag",
         "action_id": state.get("action_id"),
+        "execution_plan": plan_seed,
     }
+
 
 
 async def reason_retail_request(state: OrchestratorState) -> Dict[str, Any]:

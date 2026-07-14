@@ -91,9 +91,20 @@ Composed hat views inherit base playbook entries and overlay hat-specific ones.
 Reasoner plans expose `playbook_refs` for the primary active hat.
 
 Hats specialize `retail.base`. They annotate `RetailExecutionPlan` with
-`active_agent_ids`, `primary_agent_id`, and `handoff_tips` — they do **not**
-add a second orchestrator. Roster / staffing is first-class via
-`retail.hat.workforce_roster`.
+`active_agent_ids`, `primary_agent_id`, and `handoff_tips`. Keyword/imperative
+action matches are **filtered** by the primary hat’s `allowed_actions`. Explicit
+`action:<id>` addressing still wins when permitted. Playbook formulas with
+`implemented_by` are disclosed on action outputs as `applied_formulas`.
+
+Confirmed hat memory is now writable:
+
+```
+GET  /v1/agents/memory
+POST /v1/agents/memory  { agent_id, key, value, confirm: true }
+```
+
+Keys must match the hat’s `memory.save` declarations. LLM free text / secrets /
+PII keys are refused.
 
 ```
 GET /v1/agents

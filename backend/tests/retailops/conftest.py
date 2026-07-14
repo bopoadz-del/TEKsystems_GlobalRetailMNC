@@ -27,6 +27,7 @@ _TABLES = [
     "messages", "conversations", "action_runs", "document_chunks",
     "documents", "projects", "users", "tenants",
     "retail_learning_profiles", "retail_learning_events",
+    "retail_agent_memory",
 ]
 
 

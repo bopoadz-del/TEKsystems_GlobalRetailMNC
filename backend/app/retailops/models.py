@@ -244,3 +244,35 @@ class RetailLearningProfile(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
+
+class RetailAgentMemory(Base):
+    """Confirmed discipline-hat memory entries (teachable overrides).
+
+    Writes require explicit confirmation and must match a hat ``memory.save`` key.
+    Never stores LLM free text, secrets, or PII payloads.
+    """
+
+    __tablename__ = "retail_agent_memory"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "project_id",
+            "agent_id",
+            "key",
+            name="uq_agent_memory_key",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    project_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str] = mapped_column(String(128), index=True)
+    key: Mapped[str] = mapped_column(String(128))
+    value: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confirmed_by: Mapped[str] = mapped_column(String(64))
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+

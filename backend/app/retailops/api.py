@@ -7,6 +7,8 @@ Endpoints:
     POST /v1/ask                      (LangGraph orchestration)
     GET  /v1/agents                   (discipline base + hats catalog)
     GET  /v1/agents/{agent_id}
+    GET  /v1/agents/memory
+    POST /v1/agents/memory
     POST /v1/exports                  (stream PDF/DOCX/XLSX download)
     POST /v1/documents                (ingest)
     GET  /v1/documents
@@ -206,6 +208,70 @@ def list_agents(
         "bases": bases,
         "hats": hats,
     }
+
+
+
+class MemorySaveRequest(BaseModel):
+    agent_id: str
+    key: str
+    value: Dict[str, Any] = Field(default_factory=dict)
+    confirm: bool = False
+
+
+@router.get("/v1/agents/memory")
+def list_agent_memory(
+    agent_id: Optional[str] = None,
+    key: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    session: Session = Depends(get_session),
+    context: ActionContext = Depends(get_context),
+) -> Dict[str, Any]:
+    if not context.has_permission("retail:read"):
+        raise HTTPException(status_code=403, detail="missing retail:read")
+    from app.retailops.agents.memory import list_memory, memory_to_dict
+
+    rows = list_memory(
+        session,
+        tenant_id=context.tenant_id,
+        project_id=context.project_id,
+        agent_id=agent_id,
+        key=key,
+        limit=limit,
+        offset=offset,
+    )
+    return {
+        "advisory_only": True,
+        "count": len(rows),
+        "entries": [memory_to_dict(r) for r in rows],
+    }
+
+
+@router.post("/v1/agents/memory")
+def save_agent_memory(
+    body: MemorySaveRequest,
+    session: Session = Depends(get_session),
+    context: ActionContext = Depends(get_context),
+) -> Dict[str, Any]:
+    if not context.has_permission("retail:analyse"):
+        raise HTTPException(status_code=403, detail="missing retail:analyse")
+    from app.retailops.agents.memory import AgentMemoryError, memory_to_dict, save_memory
+
+    try:
+        row = save_memory(
+            session,
+            tenant_id=context.tenant_id,
+            project_id=context.project_id,
+            user_id=context.user_id,
+            agent_id=body.agent_id,
+            key=body.key,
+            value=body.value,
+            confirmed=body.confirm,
+        )
+    except AgentMemoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    session.commit()
+    return {"status": "saved", "entry": memory_to_dict(row), "advisory_only": True}
 
 
 @router.get("/v1/agents/{agent_id}")

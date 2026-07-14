@@ -11,6 +11,10 @@ import re
 from typing import Any, Dict, List, Optional, Set
 
 from app.retailops.agents import get_agent_catalog
+from app.retailops.agents.formulas import (
+    allowed_actions_for_hat,
+    executable_formula_ids,
+)
 from app.retailops.kit.contract import ActionContext, ActionRegistry, ActionSpec
 from app.retailops.kit.contract.models import RESERVED_CONTEXT_KEYS
 from app.retailops.reasoning.domain_map import (
@@ -287,12 +291,88 @@ class RetailOperationsReasoner:
                 else:
                     args["document_kind"] = "operations_brief"
             notes.append(f"export_defaults:{args.get('format')}:{args.get('document_kind')}")
+
+        # Discipline-hat allowed_actions enforcement (keyword/imperative matches).
+        # Explicit action:<id> addressing above is intentionally not filtered here.
+        catalog = get_agent_catalog()
+        active_ids = [
+            h.agent_id
+            for h in catalog.enabled_hats(disabled=disabled, question=q, intent=intent)
+        ]
+        plan_intent = intent if intent in RETAIL_INTENTS else "unknown"
+        preferred = INTENT_PRIMARY_HAT.get(plan_intent)
+        put_off_preferred = False
+        if preferred:
+            hat = catalog.get(preferred)
+            signals = set(disabled)
+            if hat is not None:
+                signals |= set(hat.activation.put_off_by)
+            put_off_preferred = (
+                preferred in disabled
+                or preferred not in active_ids
+                and any(sig in disabled for sig in (hat.activation.put_off_by if hat else []))
+            )
+            # Also treat missing preferred as put-off when an explicit disable matched.
+            if hat is not None and any(sig in disabled for sig in hat.activation.put_off_by):
+                put_off_preferred = True
+
+        if put_off_preferred and preferred:
+            notes.append(f"hat_put_off:{preferred}")
+            return self._annotate(
+                RetailExecutionPlan(
+                    primary_intent=plan_intent,
+                    confidence=confidence,
+                    route="unsupported",
+                    recommended_action_ids=[],
+                    related_domains=related,
+                    evidence_requirements=self._evidence_hints(intent),
+                    arguments=args,
+                    notes=notes + ["unsupported_preferred_hat_put_off"],
+                ),
+                question=q,
+                intent=plan_intent,
+                disabled=disabled,
+            )
+
+        tentative_hat = self._select_primary_hat(q, plan_intent, active_ids) or preferred
+        allowed = allowed_actions_for_hat(tentative_hat)
+        filtered = candidates
+        if tentative_hat and allowed:
+            filtered = [a for a in candidates if a in allowed]
+            if not filtered:
+                notes.append(
+                    f"hat_action_block:{tentative_hat}:{','.join(candidates)}"
+                )
+                return self._annotate(
+                    RetailExecutionPlan(
+                        primary_intent=plan_intent,
+                        confidence=confidence,
+                        route="unsupported",
+                        recommended_action_ids=[],
+                        related_domains=related,
+                        evidence_requirements=self._evidence_hints(intent),
+                        arguments=args,
+                        notes=notes
+                        + ["unsupported_action_outside_hat_allowed_actions"],
+                    ),
+                    question=q,
+                    intent=plan_intent,
+                    disabled=disabled,
+                )
+            if filtered != candidates:
+                notes.append(
+                    "hat_action_filter:"
+                    f"{tentative_hat}:{','.join(candidates)}→{','.join(filtered)}"
+                )
+            primary = filtered[0]
+            spec = permitted[primary]
+
         return self._annotate(
             RetailExecutionPlan(
-                primary_intent=intent if intent in RETAIL_INTENTS else "unknown",
+                primary_intent=plan_intent,
                 confidence=max(confidence, 0.7),
                 route="action",
-                recommended_action_ids=candidates,
+                recommended_action_ids=filtered,
                 related_domains=related,
                 required_dependencies=self._dependency_hints(spec),
                 evidence_requirements=self._evidence_hints(intent),
@@ -301,7 +381,7 @@ class RetailOperationsReasoner:
                 notes=notes,
             ),
             question=q,
-            intent=intent if intent in RETAIL_INTENTS else "unknown",
+            intent=plan_intent,
             disabled=disabled,
         )
 
@@ -331,14 +411,22 @@ class RetailOperationsReasoner:
             hat = catalog.get(primary)
             if hat is not None:
                 pb = hat.playbook
+                exec_ids = [
+                    f.id
+                    for f in pb.formulas
+                    if f.implemented_by and f.id in set(executable_formula_ids(primary))
+                ]
                 playbook_refs = {
                     "agent_id": primary,
                     "formula_ids": [f.id for f in pb.formulas],
+                    "executable_formula_ids": exec_ids,
                     "standard_ids": [s.id for s in pb.standards],
                     "procedure_ids": [p.id for p in pb.procedures],
                     "formula_count": len(pb.formulas),
                     "standard_count": len(pb.standards),
                     "procedure_count": len(pb.procedures),
+                    "allowed_actions": sorted(allowed_actions_for_hat(primary)),
+                    "memory_save_keys": [r.key for r in hat.memory.save],
                 }
         notes = list(plan.notes or [])
         if primary:

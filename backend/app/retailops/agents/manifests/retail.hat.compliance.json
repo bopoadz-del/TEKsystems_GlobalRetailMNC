@@ -52,8 +52,7 @@
     }
   ],
   "allowed_paths": [
-    "fixtures/northstar/**",
-    "packs/retail_core_open_v1/seeds/**"
+    "fixtures/northstar/**"
   ],
   "allowed_actions": [
     "retail.check_promotion_compliance"
@@ -154,7 +153,7 @@
         "id": "compliance.cite_or_refuse",
         "name": "Cite or refuse",
         "kind": "regulatory",
-        "ref": "packs/retail_core_open_v1",
+        "ref": "fixtures/northstar/**",
         "must_cite": true,
         "description": "Every policy claim needs retrieved citation URLs; low confidence blocks."
       },

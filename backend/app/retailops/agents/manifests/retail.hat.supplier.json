@@ -60,8 +60,7 @@
     }
   ],
   "allowed_paths": [
-    "fixtures/northstar/**",
-    "packs/retail_core_open_v1/seeds/**"
+    "fixtures/northstar/**"
   ],
   "allowed_actions": [
     "retail.analyse_inventory_risk",

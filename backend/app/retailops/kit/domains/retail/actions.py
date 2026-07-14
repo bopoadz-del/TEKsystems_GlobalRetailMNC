@@ -25,6 +25,15 @@ _PERM_ANALYSE = "retail:analyse"
 _PERM_LEARNING_WRITE = "retail:learning_write"
 
 
+def _with_formulas(action_id: str, output: Dict[str, Any]) -> Dict[str, Any]:
+    """Attach playbook formula metadata for formulas this action actually applies."""
+    from app.retailops.agents.formulas import formulas_applied_by_action
+
+    enriched = dict(output or {})
+    enriched["applied_formulas"] = formulas_applied_by_action(action_id)
+    return enriched
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -161,7 +170,9 @@ async def generate_operations_brief(
         "missing_information": missing_information,
         "evidence": [e.to_dict() for e in evidence],
     }
-    return ActionOutcome.success(output, evidence=evidence)
+    return ActionOutcome.success(
+        _with_formulas("retail.generate_operations_brief", output), evidence=evidence
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +324,9 @@ async def analyse_inventory_risk(
         "evidence": [e.to_dict() for e in evidence],
         "learning_adjustments": list(learning_adjustments.values()),
     }
-    return ActionOutcome.success(output, evidence=evidence)
+    return ActionOutcome.success(
+        _with_formulas("retail.analyse_inventory_risk", output), evidence=evidence
+    )
 
 
 def _inv_key(sku: Any, store: Any) -> str:
@@ -521,7 +534,10 @@ async def check_promotion_compliance(
         "summary": summary,
         "evidence": [_record_evidence(r).to_dict() for r in evidence_records],
     }
-    return ActionOutcome.success(output, evidence=[_record_evidence(r) for r in evidence_records])
+    return ActionOutcome.success(
+        _with_formulas("retail.check_promotion_compliance", output),
+        evidence=[_record_evidence(r) for r in evidence_records],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -616,7 +632,10 @@ async def get_learning_summary(
         )
         rows = [profile_to_dict(p) for p in profiles]
     return ActionOutcome.success(
-        {"profiles": rows, "count": len(rows), "advisory_only": True}
+        _with_formulas(
+            "retail.get_learning_summary",
+            {"profiles": rows, "count": len(rows), "advisory_only": True},
+        )
     )
 
 
@@ -688,7 +707,7 @@ async def recommend_reorder_parameters(
         if k == "status" or v is None:
             continue
         output[k] = v
-    return ActionOutcome.success(output)
+    return ActionOutcome.success(_with_formulas("retail.recommend_reorder_parameters", output))
 
 
 # ---------------------------------------------------------------------------
@@ -801,7 +820,9 @@ async def export_document(
     output["document_kind"] = kind
     output["title"] = document.title
     output["advisory_only"] = True
-    return ActionOutcome.success(output, evidence=evidence)
+    return ActionOutcome.success(
+        _with_formulas("retail.export_document", output), evidence=evidence
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -67,8 +67,9 @@ class AgentCatalog:
             if any(sig in put_off for sig in hat.activation.put_off_by):
                 continue
             if not hat.activation.default_enabled and hat.activation.mode != "auto":
-                # Still allow explicit trigger match when hybrid/manual.
-                pass
+                # Manual hats still activate when an explicit trigger matches below.
+                if not self._triggered(hat, q, intent):
+                    continue
             if self._triggered(hat, q, intent):
                 out.append(hat)
             elif hat.activation.default_enabled and hat.activation.mode in {

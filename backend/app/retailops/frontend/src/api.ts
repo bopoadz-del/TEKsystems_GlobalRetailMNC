@@ -128,10 +128,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ filename, text, doc_role }),
     }),
-  ask: (p: Principal, question: string) =>
+  ask: (p: Principal, question: string, disabledAgents: string[] = []) =>
     req<{ route: string; answer: string; citations: Citation[]; action_result: ActionResult | null; execution_plan?: Record<string, unknown> }>("/v1/ask", p, {
       method: "POST",
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, disabled_agents: disabledAgents }),
     }),
   actions: (p: Principal) => req<{ actions: ActionSpec[] }>("/v1/actions", p),
   execute: (p: Principal, actionId: string, args: Record<string, unknown>, confirm: boolean) =>
@@ -168,4 +168,17 @@ export const api = {
     ),
   agent: (p: Principal, agentId: string) =>
     req<AgentManifest>(`/v1/agents/${encodeURIComponent(agentId)}`, p),
+  listMemory: (p: Principal, agentId?: string) =>
+    req<{ advisory_only: boolean; count: number; entries: Record<string, unknown>[] }>(
+      `/v1/agents/memory${agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ""}`,
+      p,
+    ),
+  saveMemory: (
+    p: Principal,
+    body: { agent_id: string; key: string; value: Record<string, unknown>; confirm: boolean },
+  ) =>
+    req<{ status: string; entry: Record<string, unknown> }>("/v1/agents/memory", p, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };

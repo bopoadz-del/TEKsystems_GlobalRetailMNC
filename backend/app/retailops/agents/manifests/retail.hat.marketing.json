@@ -200,7 +200,7 @@
         "id": "marketing.ftc_claims",
         "name": "Advertising claim caution",
         "kind": "regulatory",
-        "ref": "packs/retail_core_open_v1",
+        "ref": "fixtures/northstar/**",
         "must_cite": true,
         "description": "Advertising claims with FTC/display risk must hand off to compliance."
       }
