@@ -139,23 +139,12 @@ def ingest_text_source(
     try:
         acq = acquire_source(source_id, fixture_path=fixture_path, force=force)
     except Exception as exc:
-        if prefer_network and fixture_path is None:
-            # Last resort: mini fixture for resilience, tagged as degraded.
-            mini = Path(__file__).resolve().parents[1] / "fixtures_min" / "text"
-            for ext in (".txt", ".md", ".html", ".pdf"):
-                candidate = mini / f"{source_id}{ext}"
-                if candidate.exists():
-                    fixture_path = candidate
-                    break
-            if fixture_path is not None:
-                acq = acquire_source(source_id, fixture_path=fixture_path, force=force)
-                acq["warnings"] = list(acq.get("warnings") or []) + [
-                    f"network_acquire_failed_fallback_mini:{exc}"
-                ]
-            else:
-                raise RuntimeError(f"acquire failed for {source_id}: {exc}") from exc
-        else:
+        # Full/network profile must not silently degrade to mini fixtures.
+        if prefer_network:
             raise RuntimeError(f"acquire failed for {source_id}: {exc}") from exc
+        if fixture_path is None:
+            raise
+        raise RuntimeError(f"acquire failed for {source_id}: {exc}") from exc
 
     path = Path(acq["path"])
     data = path.read_bytes()
