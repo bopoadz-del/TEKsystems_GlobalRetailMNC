@@ -112,7 +112,19 @@ def test_reasoner_unknown_does_not_fabricate_action(registry):
         registry=registry,
         context=_ctx("prj_test"),
     )
-    assert plan.route in {"rag", "unsupported"}
+    # Imperative with no registered action → unsupported (not RAG).
+    assert plan.route == "unsupported"
+    assert plan.recommended_action_ids == []
+
+
+def test_reasoner_unsupported_imperative_book_flight(registry):
+    reasoner = RetailOperationsReasoner()
+    plan = reasoner.reason(
+        question="Please book me a flight to the moon.",
+        registry=registry,
+        context=_ctx("prj_test"),
+    )
+    assert plan.route == "unsupported"
     assert plan.recommended_action_ids == []
 
 

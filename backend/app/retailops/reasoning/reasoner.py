@@ -70,6 +70,48 @@ def _has_imperative(text: str) -> bool:
     return any(v in tokens for v in ACTION_IMPERATIVES)
 
 
+_COMMAND_LEAD_INS = (
+    "please ",
+    "kindly ",
+    "i need you to ",
+    "i want you to ",
+    "go ahead and ",
+)
+
+# Extra command verbs beyond retail action imperatives (unsupported if unmatched).
+_EXTRA_COMMAND_VERBS = frozenset(
+    {
+        "book",
+        "send",
+        "schedule",
+        "delete",
+        "update",
+        "cancel",
+        "order",
+        "deploy",
+        "teleport",
+        "buy",
+        "sell",
+        "ship",
+        "approve",
+        "reject",
+        "fetch",
+        "download",
+    }
+)
+
+
+def _looks_like_command(text: str) -> bool:
+    """True when the utterance looks like a command / request to do work."""
+    if _has_imperative(text):
+        return True
+    lowered = text.strip().lower()
+    if any(lowered.startswith(p) for p in _COMMAND_LEAD_INS):
+        return True
+    first = re.split(r"\W+", lowered, maxsplit=1)[0] if lowered else ""
+    return first in ACTION_IMPERATIVES or first in _EXTRA_COMMAND_VERBS
+
+
 def _sanitize_plan_arguments(arguments: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in (arguments or {}).items() if k not in RESERVED_CONTEXT_KEYS}
 
@@ -141,7 +183,7 @@ class RetailOperationsReasoner:
         intent, confidence = _score_intent(q)
         related = list(RELATED_DOMAINS.get(intent, []))
         is_question = _is_question(q)
-        imperative = _has_imperative(q)
+        looks_like_command = _looks_like_command(q)
 
         # Factual / procedure questions stay on RAG even when action topic words
         # or imperative verbs appear in the sentence.
@@ -161,8 +203,11 @@ class RetailOperationsReasoner:
         # Match permitted actions by noun keywords and intent hints.
         candidates = self._match_actions(q, permitted, intent)
         if not candidates:
-            if imperative and intent != "unknown":
-                notes.append("no_registered_action_for_intent")
+            # Commands that do not map to a registered action must not fall
+            # through to RAG (nearest-neighbour retrieval + fake LLM can
+            # fabricate an answer from unrelated store documents).
+            if looks_like_command:
+                notes.append("unsupported_command_no_registered_action")
                 return RetailExecutionPlan(
                     primary_intent=intent,
                     confidence=confidence,
@@ -187,7 +232,9 @@ class RetailOperationsReasoner:
 
         primary = candidates[0]
         spec = permitted[primary]
-        notes.append("imperative_action_match" if imperative else "action_keyword_match")
+        notes.append(
+            "imperative_action_match" if looks_like_command else "action_keyword_match"
+        )
         return RetailExecutionPlan(
             primary_intent=intent if intent in RETAIL_INTENTS else "unknown",
             confidence=max(confidence, 0.7),
@@ -225,7 +272,7 @@ class RetailOperationsReasoner:
                 # Require at least one noun keyword overlap OR strong imperative
                 # plus intent score so we don't auto-fire unrelated hints.
                 kws = _action_keywords(action_id)
-                if kws & tokens or (_has_imperative(question) and intent != "unknown"):
+                if kws & tokens or (_looks_like_command(question) and intent != "unknown"):
                     if kws.issubset(tokens) or (kws & tokens) or action_id.split(".")[-1].split("_")[0] in tokens:
                         ordered.append(action_id)
 

@@ -133,6 +133,10 @@ async def synthesize_response(state: OrchestratorState) -> Dict[str, Any]:
             return {"answer": "The action could not be executed."}
         if result.status == ActionStatus.SUCCESS:
             spec = state["registry"].resolve(state["action_id"])
+            # FakeProvider only assembles RAG citation lines; action prompts are
+            # JSON so they would falsely report "no supporting documents".
+            if getattr(provider, "name", "") == "fake":
+                return {"answer": _deterministic_action_summary(result)}
             system = (spec.synthesis_instructions if spec else None) or (
                 "Summarise the action result for a business user, grounded only in the output."
             )
