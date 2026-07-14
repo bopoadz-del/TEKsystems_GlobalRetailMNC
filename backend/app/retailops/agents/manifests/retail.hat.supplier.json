@@ -1,0 +1,133 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.supplier",
+  "kind": "hat",
+  "display_name": "Supplier & Merchandising Hat",
+  "discipline": "supplier",
+  "extends": "retail.base",
+  "summary": "Supplier reliability, OTIF/fill-rate risk, and merchandising signals that affect reorder and assortment.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      {
+        "type": "intent",
+        "value": "supplier"
+      },
+      {
+        "type": "keyword",
+        "value": "supplier"
+      },
+      {
+        "type": "keyword",
+        "value": "vendor"
+      },
+      {
+        "type": "keyword",
+        "value": "otif"
+      },
+      {
+        "type": "keyword",
+        "value": "fill rate"
+      },
+      {
+        "type": "keyword",
+        "value": "lead time"
+      }
+    ],
+    "put_off_by": [
+      "disable:supplier",
+      "disable:retail.hat.supplier"
+    ]
+  },
+  "context_sources": [
+    {
+      "source_id": "supplier_docs",
+      "kind": "project_documents",
+      "doc_roles": [
+        "supplier",
+        "document"
+      ],
+      "description": "Supplier notices and fulfillment-related docs"
+    },
+    {
+      "source_id": "supplier_learning",
+      "kind": "learning_profiles",
+      "modules": [
+        "supplier_fulfilment"
+      ],
+      "description": "Verified supplier reliability profiles"
+    }
+  ],
+  "allowed_paths": [
+    "fixtures/northstar/**",
+    "packs/retail_core_open_v1/seeds/**"
+  ],
+  "allowed_actions": [
+    "retail.analyse_inventory_risk",
+    "retail.get_learning_summary"
+  ],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.inventory",
+      "when": "fulfillment reliability changes reorder quantity or safety stock",
+      "carry": [
+        "sku",
+        "store",
+        "supplier_signal"
+      ],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.accounting",
+      "when": "supplier issues create cost or cash-impact concerns",
+      "carry": [
+        "sku",
+        "cost_impact"
+      ],
+      "requires_confirmation": false
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [
+      {
+        "key": "confirmed_lead_time_override",
+        "description": "Manager-confirmed supplier lead-time override days",
+        "requires_confirmation": true
+      }
+    ],
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "unverified_claims"
+    ]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": [
+      "supplier_signal_before_override"
+    ]
+  },
+  "failure_policy": {
+    "on_missing_context": "dependency_required",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": [
+    "retail:read",
+    "retail:analyse"
+  ],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": [
+      "hat",
+      "supplier",
+      "merchandising",
+      "fulfillment"
+    ]
+  }
+}

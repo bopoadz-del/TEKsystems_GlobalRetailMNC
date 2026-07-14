@@ -1,0 +1,89 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.inventory",
+  "kind": "hat",
+  "display_name": "Inventory & Replenishment Hat",
+  "discipline": "inventory",
+  "extends": "retail.base",
+  "summary": "Stock risk, reorder advice, and chilled/dry inventory exceptions. Uses verified demand learning as advisory input only.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      { "type": "intent", "value": "inventory" },
+      { "type": "keyword", "value": "reorder" },
+      { "type": "keyword", "value": "stockout" },
+      { "type": "action_id", "value": "retail.analyse_inventory_risk" }
+    ],
+    "put_off_by": ["disable:inventory", "disable:retail.hat.inventory"]
+  },
+  "context_sources": [
+    {
+      "source_id": "inventory_docs",
+      "kind": "project_documents",
+      "doc_roles": ["inventory", "policy"],
+      "description": "Inventory sheets and stock policies"
+    },
+    {
+      "source_id": "demand_learning",
+      "kind": "learning_profiles",
+      "modules": ["demand_reorder", "store_exceptions"],
+      "description": "Demand calibration + exception patterns"
+    }
+  ],
+  "allowed_paths": ["fixtures/northstar/*/inventory.*"],
+  "allowed_actions": [
+    "retail.analyse_inventory_risk",
+    "retail.recommend_reorder_parameters",
+    "retail.get_learning_summary",
+    "retail.record_verified_outcome"
+  ],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.supplier",
+      "when": "stockout linked to late delivery or fill-rate risk",
+      "carry": ["sku", "store", "supplier_signal"],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.accounting",
+      "when": "inventory valuation or shrink P&L impact requested",
+      "carry": ["sku", "unit_cost", "variance"],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.workforce_roster",
+      "when": "count variance requires additional labour cover",
+      "carry": ["store", "shift_window"],
+      "requires_confirmation": true
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [
+      {
+        "key": "confirmed_reorder_override",
+        "description": "Manager-confirmed reorder/safety-stock override (never auto-applied)",
+        "requires_confirmation": true
+      }
+    ],
+    "never_persist": ["llm_raw_text", "secrets", "unverified_claims"]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": ["high_confidence_before_apply", "advisory_disclosure"]
+  },
+  "failure_policy": {
+    "on_missing_context": "dependency_required",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": ["retail:read", "retail:analyse"],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": ["hat", "inventory", "replenishment"]
+  }
+}

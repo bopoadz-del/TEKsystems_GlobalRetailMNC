@@ -1,0 +1,92 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.workforce_roster",
+  "kind": "hat",
+  "display_name": "Workforce Roster Hat",
+  "discipline": "workforce_roster",
+  "extends": "retail.base",
+  "summary": "Staff roster coverage, shift gaps, and peak-hour labour. Big in store ops — coordinates with HR for policy and inventory for surge counts.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      { "type": "intent", "value": "workforce" },
+      { "type": "keyword", "value": "roster" },
+      { "type": "keyword", "value": "staffing" },
+      { "type": "keyword", "value": "shift" },
+      { "type": "keyword", "value": "labour" },
+      { "type": "keyword", "value": "labor" },
+      { "type": "keyword", "value": "headcount" }
+    ],
+    "put_off_by": ["disable:roster", "disable:workforce", "disable:retail.hat.workforce_roster"]
+  },
+  "context_sources": [
+    {
+      "source_id": "ops_docs",
+      "kind": "project_documents",
+      "doc_roles": ["policy", "incident", "document"],
+      "description": "Store ops and coverage-related documents"
+    },
+    {
+      "source_id": "exception_learning",
+      "kind": "learning_profiles",
+      "modules": ["store_exceptions"],
+      "description": "Recurring labour-related exception patterns when present"
+    }
+  ],
+  "allowed_paths": ["fixtures/northstar/**"],
+  "allowed_actions": ["retail.generate_operations_brief"],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.hr",
+      "when": "roster change conflicts with leave/absence policy",
+      "carry": ["store", "role", "shift_window"],
+      "requires_confirmation": true
+    },
+    {
+      "to_agent_id": "retail.hat.store_operations",
+      "when": "coverage gap affects opening/closing checklist",
+      "carry": ["store", "shift_window"],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.inventory",
+      "when": "extra heads needed for stock count or promo build",
+      "carry": ["store", "task"],
+      "requires_confirmation": false
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [
+      {
+        "key": "confirmed_coverage_rule",
+        "description": "Confirmed minimum coverage rule for a store/role",
+        "requires_confirmation": true
+      },
+      {
+        "key": "lead_time_override_hours",
+        "description": "Confirmed lead-time hours before roster publish",
+        "requires_confirmation": true
+      }
+    ],
+    "never_persist": ["llm_raw_text", "secrets", "employee_pii", "unverified_claims"]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": ["no_auto_publish_roster"]
+  },
+  "failure_policy": {
+    "on_missing_context": "dependency_required",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": ["retail:read", "retail:analyse"],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": ["hat", "workforce", "roster", "staffing"]
+  }
+}

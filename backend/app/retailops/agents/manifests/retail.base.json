@@ -1,0 +1,76 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.base",
+  "kind": "base",
+  "display_name": "Retail Ops Base Agent",
+  "discipline": "base",
+  "extends": null,
+  "summary": "Shared retail operations cortex: trusted context, grounding rules, ActionRegistry awareness, and honesty policies. Discipline hats specialize this base — they never replace it.",
+  "activation": {
+    "mode": "auto",
+    "default_enabled": true,
+    "triggers": [{ "type": "intent", "value": "unknown" }],
+    "put_off_by": ["disable:retail.base"]
+  },
+  "context_sources": [
+    {
+      "source_id": "project_docs",
+      "kind": "project_documents",
+      "doc_roles": ["document", "policy", "incident", "inventory", "supplier"],
+      "description": "Tenant/project documents via hybrid retrieval"
+    },
+    {
+      "source_id": "learning_advisory",
+      "kind": "learning_profiles",
+      "modules": [
+        "demand_reorder",
+        "supplier_fulfilment",
+        "promotion_effectiveness",
+        "store_exceptions"
+      ],
+      "description": "Verified-outcome learning profiles (advisory only)"
+    }
+  ],
+  "allowed_paths": [
+    "fixtures/northstar/**",
+    "packs/retail_core_open_v1/seeds/**"
+  ],
+  "allowed_actions": [
+    "retail.generate_operations_brief",
+    "retail.get_learning_summary"
+  ],
+  "handoffs": [],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [
+      {
+        "key": "confirmed_operating_assumption",
+        "description": "User-confirmed operating assumption for this project",
+        "requires_confirmation": true
+      }
+    ],
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "cross_tenant_data",
+      "unverified_claims"
+    ]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": ["tenant_project_filter", "reserved_context_immutable"]
+  },
+  "failure_policy": {
+    "on_missing_context": "dependency_required",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": ["retail:read"],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": ["base", "retail", "cerebrumdev-catalog"]
+  }
+}

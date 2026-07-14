@@ -1,0 +1,80 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.hr",
+  "kind": "hat",
+  "display_name": "Retail HR Hat",
+  "discipline": "hr",
+  "extends": "retail.base",
+  "summary": "People policy, attendance exceptions, and HR-sensitive store issues. Hands roster capacity questions to the workforce roster hat.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      { "type": "keyword", "value": "hr" },
+      { "type": "keyword", "value": "human resources" },
+      { "type": "keyword", "value": "absence" },
+      { "type": "keyword", "value": "onboarding" },
+      { "type": "keyword", "value": "grievance" },
+      { "type": "keyword", "value": "leave policy" }
+    ],
+    "put_off_by": ["disable:hr", "disable:retail.hat.hr"]
+  },
+  "context_sources": [
+    {
+      "source_id": "hr_policies",
+      "kind": "project_documents",
+      "doc_roles": ["policy", "document"],
+      "description": "HR / people policies present in the project corpus"
+    }
+  ],
+  "allowed_paths": ["fixtures/northstar/**"],
+  "allowed_actions": ["retail.generate_operations_brief"],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.workforce_roster",
+      "when": "absence or covering shift requires roster change",
+      "carry": ["store", "role", "shift_window"],
+      "requires_confirmation": true
+    },
+    {
+      "to_agent_id": "retail.hat.compliance",
+      "when": "labour or safety policy conflict",
+      "carry": ["policy_ref", "incident_ref"],
+      "requires_confirmation": false
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [
+      {
+        "key": "confirmed_hr_policy_interpretation",
+        "description": "Confirmed interpretation of a people policy clause",
+        "requires_confirmation": true
+      }
+    ],
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "employee_pii",
+      "health_data",
+      "unverified_claims"
+    ]
+  },
+  "verification": {
+    "grounding": "documents_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": ["no_pii_in_memory", "policy_citation_required"]
+  },
+  "failure_policy": {
+    "on_missing_context": "ask_clarifying",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": ["retail:read"],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": ["hat", "hr", "people"]
+  }
+}

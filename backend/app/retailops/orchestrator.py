@@ -41,6 +41,7 @@ class OrchestratorState(TypedDict, total=False):
     session: Session
     registry: ActionRegistry
     provider: LLMProvider
+    disabled_agents: List[str]
     # Working fields
     route: str
     action_id: Optional[str]
@@ -72,6 +73,7 @@ async def reason_retail_request(state: OrchestratorState) -> Dict[str, Any]:
         registry=state["registry"],
         context=state["context"],
         arguments=state.get("arguments", {}),
+        disabled_agents=state.get("disabled_agents") or [],
     )
     action_id = plan.recommended_action_ids[0] if plan.recommended_action_ids else None
     return {
@@ -289,6 +291,7 @@ async def run_orchestrator(
     registry: Optional[ActionRegistry] = None,
     provider: Optional[LLMProvider] = None,
     arguments: Optional[Dict[str, Any]] = None,
+    disabled_agents: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     graph = get_graph()
     registry = registry or service.build_registry()
@@ -300,6 +303,7 @@ async def run_orchestrator(
         "registry": registry,
         "provider": provider,
         "arguments": arguments or {},
+        "disabled_agents": list(disabled_agents or []),
     }
     final = await graph.ainvoke(state)
     return {

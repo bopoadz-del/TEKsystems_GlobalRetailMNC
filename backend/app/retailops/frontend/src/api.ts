@@ -70,6 +70,28 @@ export interface LearningProfile {
   advisory_only?: boolean;
 }
 
+export interface AgentManifest {
+  agent_id: string;
+  kind: string;
+  display_name: string;
+  discipline: string;
+  extends?: string | null;
+  summary?: string;
+  activation?: {
+    mode?: string;
+    default_enabled?: boolean;
+    triggers?: { type: string; value: string }[];
+    put_off_by?: string[];
+  };
+  handoffs?: { to_agent_id: string; when: string; carry?: string[] }[];
+  memory?: Record<string, unknown>;
+  verification?: Record<string, unknown>;
+  failure_policy?: Record<string, unknown>;
+  allowed_actions?: string[];
+  composed_from?: string[];
+  [key: string]: unknown;
+}
+
 export const api = {
   overview: (p: Principal) => req<{ document_count: number; recent_actions: { action_id: string; status: string; started_at: string }[]; system_health: Record<string, unknown> }>("/v1/overview", p),
   documents: (p: Principal) => req<{ documents: { document_id: string; filename: string; status: string; chunk_count: number; doc_role?: string; error?: string }[] }>("/v1/documents", p),
@@ -97,4 +119,11 @@ export const api = {
     ),
   learningProfiles: (p: Principal) =>
     req<{ advisory_only: boolean; count: number; profiles: LearningProfile[] }>("/v1/learning/profiles", p),
+  agents: (p: Principal, composed = true) =>
+    req<{ vendor_neutral: boolean; bases: AgentManifest[]; hats: AgentManifest[]; hat_count: number }>(
+      `/v1/agents?composed=${composed ? "true" : "false"}`,
+      p,
+    ),
+  agent: (p: Principal, agentId: string) =>
+    req<AgentManifest>(`/v1/agents/${encodeURIComponent(agentId)}`, p),
 };

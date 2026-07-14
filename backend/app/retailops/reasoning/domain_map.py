@@ -23,15 +23,15 @@ RETAIL_INTENTS: Tuple[str, ...] = (
 
 # Deterministic related-domain expansion for each primary intent.
 RELATED_DOMAINS: Dict[str, List[str]] = {
-    "inventory": ["supplier", "store_operations", "reporting"],
-    "promotion": ["inventory", "compliance", "reporting"],
-    "supplier": ["inventory", "incident"],
-    "incident": ["compliance", "store_operations", "reporting"],
-    "store_operations": ["inventory", "workforce"],
-    "customer_experience": ["store_operations", "reporting"],
-    "compliance": ["reporting"],
-    "workforce": ["store_operations", "reporting"],
-    "reporting": [],
+    "inventory": ["supplier", "store_operations", "reporting", "accounting", "workforce"],
+    "promotion": ["inventory", "compliance", "reporting", "marketing", "accounting"],
+    "supplier": ["inventory", "incident", "accounting"],
+    "incident": ["compliance", "store_operations", "reporting", "hr"],
+    "store_operations": ["inventory", "workforce", "compliance"],
+    "customer_experience": ["store_operations", "reporting", "workforce", "marketing"],
+    "compliance": ["reporting", "store_operations", "hr"],
+    "workforce": ["store_operations", "reporting", "hr", "inventory"],
+    "reporting": ["inventory", "accounting", "workforce"],
     "unknown": [],
 }
 
@@ -65,10 +65,40 @@ INTENT_CUES: Dict[str, Tuple[str, ...]] = {
     ),
     "workforce": (
         "workforce", "roster", "staffing", "labour", "labor", "shift",
+        "headcount", "duty manager",
     ),
     "reporting": (
         "report", "dashboard", "kpi", "metric", "summary",
     ),
+}
+
+# Prefer these hats when keyword cues fire — even if primary_intent stays coarse.
+DISCIPLINE_HAT_KEYWORDS: Dict[str, Tuple[str, ...]] = {
+    "retail.hat.accounting": (
+        "margin", "shrink", "p&l", "accounting", "gross profit", "valuation",
+    ),
+    "retail.hat.hr": (
+        "hr", "human resources", "absence", "onboarding", "grievance", "leave policy",
+    ),
+    "retail.hat.workforce_roster": (
+        "roster", "staffing", "shift", "headcount", "duty manager",
+    ),
+    "retail.hat.marketing": (
+        "campaign", "marketing", "promo", "promotion",
+    ),
+}
+
+# Map reasoner intents → preferred discipline hat ids (advisory selection).
+INTENT_PRIMARY_HAT: Dict[str, str] = {
+    "inventory": "retail.hat.inventory",
+    "promotion": "retail.hat.marketing",
+    "supplier": "retail.hat.supplier",
+    "store_operations": "retail.hat.store_operations",
+    "incident": "retail.hat.store_operations",
+    "compliance": "retail.hat.compliance",
+    "customer_experience": "retail.hat.customer_experience",
+    "workforce": "retail.hat.workforce_roster",
+    "reporting": "retail.hat.reporting",
 }
 
 # Which registered actions are natural fits for an intent (advisory mapping).

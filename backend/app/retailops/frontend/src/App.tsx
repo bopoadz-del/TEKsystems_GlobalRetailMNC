@@ -6,8 +6,9 @@ import { Assistant } from "./tabs/Assistant";
 import { Actions } from "./tabs/Actions";
 import { Audit } from "./tabs/Audit";
 import { Learning } from "./tabs/Learning";
+import { Agents } from "./tabs/Agents";
 
-const TABS = ["Overview", "Documents", "Assistant", "Actions", "Learning", "Audit"] as const;
+const TABS = ["Overview", "Documents", "Assistant", "Actions", "Agents", "Learning", "Audit"] as const;
 type Tab = (typeof TABS)[number];
 
 export function App() {
@@ -53,6 +54,7 @@ export function App() {
       {principal.projectId && tab === "Documents" && <Documents principal={principal} />}
       {principal.projectId && tab === "Assistant" && <Assistant principal={principal} />}
       {principal.projectId && tab === "Actions" && <Actions principal={principal} />}
+      {principal.projectId && tab === "Agents" && <Agents principal={principal} />}
       {principal.projectId && tab === "Learning" && <Learning principal={principal} />}
       {principal.projectId && tab === "Audit" && <Audit principal={principal} />}
     </div>

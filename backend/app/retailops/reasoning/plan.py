@@ -26,6 +26,10 @@ class RetailExecutionPlan(_DeterministicModel):
     arguments: Dict[str, Any] = Field(default_factory=dict)
     confirmation_required: bool = False
     notes: List[str] = Field(default_factory=list)
+    # Discipline-agent (base + hat) annotations — advisory, never a second runtime.
+    active_agent_ids: List[str] = Field(default_factory=list)
+    primary_agent_id: Optional[str] = None
+    handoff_tips: List[Dict[str, Any]] = Field(default_factory=list)
 
     @field_validator("confidence")
     @classmethod

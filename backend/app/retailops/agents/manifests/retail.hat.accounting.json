@@ -1,0 +1,83 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.accounting",
+  "kind": "hat",
+  "display_name": "Retail Accounting Hat",
+  "discipline": "accounting",
+  "extends": "retail.base",
+  "summary": "Margin, shrink, promo P&L, and store financial signals. Never invents figures; requires ledger/document grounding.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      { "type": "intent", "value": "reporting" },
+      { "type": "keyword", "value": "margin" },
+      { "type": "keyword", "value": "shrink" },
+      { "type": "keyword", "value": "p&l" },
+      { "type": "keyword", "value": "accounting" },
+      { "type": "keyword", "value": "gross profit" }
+    ],
+    "put_off_by": ["disable:accounting", "disable:retail.hat.accounting"]
+  },
+  "context_sources": [
+    {
+      "source_id": "finance_docs",
+      "kind": "project_documents",
+      "doc_roles": ["document", "policy"],
+      "description": "Cost sheets, margin notes, shrink reports"
+    },
+    {
+      "source_id": "promo_learning",
+      "kind": "learning_profiles",
+      "modules": ["promotion_effectiveness"],
+      "description": "Verified promo margin uplift/erosion"
+    }
+  ],
+  "allowed_paths": ["fixtures/northstar/**"],
+  "allowed_actions": [
+    "retail.generate_operations_brief",
+    "retail.get_learning_summary"
+  ],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.marketing",
+      "when": "margin erosion attributed to campaign mechanics",
+      "carry": ["campaign", "margin_change"],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.inventory",
+      "when": "shrink driven by inventory discrepancy",
+      "carry": ["store", "sku", "variance"],
+      "requires_confirmation": false
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [
+      {
+        "key": "confirmed_cost_override",
+        "description": "Confirmed unit cost / cost centre mapping override",
+        "requires_confirmation": true
+      }
+    ],
+    "never_persist": ["llm_raw_text", "secrets", "card_data", "unverified_claims"]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": ["no_unaided_currency_amounts"]
+  },
+  "failure_policy": {
+    "on_missing_context": "dependency_required",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": ["retail:read", "retail:analyse"],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": ["hat", "accounting", "margin", "shrink"]
+  }
+}

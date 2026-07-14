@@ -30,12 +30,13 @@ Verified outcome (separate write flow)
 
 ```
                      ┌──────────── Business UI (React/Vite) ───────────────────┐
-                     │ Overview · Documents · Assistant · Actions · Learning · Audit │
+                     │ Overview · Documents · Assistant · Actions · Agents · Learning · Audit │
                      └───────────────────────────┬─────────────────────────────┘
                                                   │ HTTP (X-User/Tenant/Project)
                      ┌────────────────────────────▼────────────────────────────┐
    /v1/ask ─────────▶  LangGraph + RetailOperationsReasoner                     │
    /v1/actions ──────▶  Generic ActionRegistry + execute_action                 │
+   /v1/agents ───────▶  Discipline base+hat catalog (composed manifests)        │
    /v1/learning/* ───▶  Advisory learning read APIs                             │
    /v1/documents ────▶  Ingestion (PDF/DOCX/TXT/MD/CSV/XLSX)                     │
    /v1/audit ────────▶  Audit (action_runs)                                     │
@@ -53,7 +54,8 @@ Verified outcome (separate write flow)
 `RetailOperationsReasoner` is deterministic. It does **not** call action
 handlers or replace LangGraph. It emits an auditable `RetailExecutionPlan`
 (primary intent, confidence, route, recommended registered actions, related
-domains, dependencies, evidence requirements, confirmation flag, notes).
+domains, dependencies, evidence requirements, confirmation flag, notes,
+active discipline hats, and handoff tips).
 
 - Factual questions stay on RAG (anti-hijack).
 - Explicit `action:<id>` addressing is supported.
@@ -62,6 +64,31 @@ domains, dependencies, evidence requirements, confirmation flag, notes).
 
 Cross-domain expansion is data-driven in
 `backend/app/retailops/reasoning/domain_map.py`.
+
+## Discipline Agents (base + hats)
+
+Vendor-neutral manifests under `backend/app/retailops/agents/` encode the
+product contract for a retail mogul’s discipline agents:
+
+| Product need | Manifest field |
+| --- | --- |
+| Triggered / put off by user | `activation` (+ `put_off_by` / `disabled_agents`) |
+| Knowledge boundary | `context_sources` + `allowed_paths` |
+| Teachable / confirmed decisions | `memory.save` (always confirmation-gated) |
+| Cross-discipline tips | `handoffs` |
+| Honesty / grounding | `verification` + `failure_policy` |
+| CerebrumDev.ai catalog | vendor-neutral JSON + `manifest.schema.json` |
+
+Hats specialize `retail.base`. They annotate `RetailExecutionPlan` with
+`active_agent_ids`, `primary_agent_id`, and `handoff_tips` — they do **not**
+add a second orchestrator. Roster / staffing is first-class via
+`retail.hat.workforce_roster`.
+
+```
+GET /v1/agents
+GET /v1/agents/{agent_id}
+POST /v1/ask  { "question": "...", "disabled_agents": ["disable:roster"] }
+```
 
 ## Retail Outcome Learning Layer
 

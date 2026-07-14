@@ -1,0 +1,89 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.marketing",
+  "kind": "hat",
+  "display_name": "Retail Marketing & Promo Hat",
+  "discipline": "marketing",
+  "extends": "retail.base",
+  "summary": "Campaign rules, display compliance, and promo effectiveness. Cross-checks advertising claims against compliance hat.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      { "type": "intent", "value": "promotion" },
+      { "type": "keyword", "value": "campaign" },
+      { "type": "keyword", "value": "marketing" },
+      { "type": "keyword", "value": "promo" },
+      { "type": "action_id", "value": "retail.check_promotion_compliance" }
+    ],
+    "put_off_by": ["disable:marketing", "disable:retail.hat.marketing"]
+  },
+  "context_sources": [
+    {
+      "source_id": "promo_docs",
+      "kind": "project_documents",
+      "doc_roles": ["promotion_rules", "promotion_evidence"],
+      "description": "Promotion rules and store evidence"
+    },
+    {
+      "source_id": "promo_learning",
+      "kind": "learning_profiles",
+      "modules": ["promotion_effectiveness"],
+      "description": "Verified campaign uplift / stockout impact"
+    }
+  ],
+  "allowed_paths": ["fixtures/northstar/*/promotion_*"],
+  "allowed_actions": [
+    "retail.check_promotion_compliance",
+    "retail.get_learning_summary",
+    "retail.record_verified_outcome"
+  ],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.compliance",
+      "when": "advertising claim or FTC / display rule risk",
+      "carry": ["campaign", "claim_text"],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.inventory",
+      "when": "promotion-related stockout risk",
+      "carry": ["campaign", "sku", "store"],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.accounting",
+      "when": "margin change from promo effectiveness",
+      "carry": ["campaign", "margin_change"],
+      "requires_confirmation": false
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [
+      {
+        "key": "confirmed_campaign_assumption",
+        "description": "Confirmed campaign targeting or offer assumption",
+        "requires_confirmation": true
+      }
+    ],
+    "never_persist": ["llm_raw_text", "secrets", "unverified_claims"]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": ["rule_before_compliance_finding"]
+  },
+  "failure_policy": {
+    "on_missing_context": "dependency_required",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": ["retail:read", "retail:analyse"],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": ["hat", "marketing", "promotion"]
+  }
+}

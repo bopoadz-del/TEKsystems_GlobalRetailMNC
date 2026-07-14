@@ -1,0 +1,137 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.store_operations",
+  "kind": "hat",
+  "display_name": "Store Operations Hat",
+  "discipline": "store_operations",
+  "extends": "retail.base",
+  "summary": "Floor execution, incidents, cleaning/signage follow-ups, and duty-manager escalation hygiene.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      {
+        "type": "intent",
+        "value": "store_operations"
+      },
+      {
+        "type": "intent",
+        "value": "incident"
+      },
+      {
+        "type": "keyword",
+        "value": "wet floor"
+      },
+      {
+        "type": "keyword",
+        "value": "incident"
+      },
+      {
+        "type": "keyword",
+        "value": "duty manager"
+      },
+      {
+        "type": "keyword",
+        "value": "opening checklist"
+      },
+      {
+        "type": "action_id",
+        "value": "retail.generate_operations_brief"
+      }
+    ],
+    "put_off_by": [
+      "disable:store_ops",
+      "disable:retail.hat.store_operations"
+    ]
+  },
+  "context_sources": [
+    {
+      "source_id": "ops_docs",
+      "kind": "project_documents",
+      "doc_roles": [
+        "incident",
+        "policy",
+        "document"
+      ],
+      "description": "Store ops, incidents, and SOP documents"
+    },
+    {
+      "source_id": "exception_learning",
+      "kind": "learning_profiles",
+      "modules": [
+        "store_exceptions"
+      ],
+      "description": "Recurring store exception patterns"
+    }
+  ],
+  "allowed_paths": [
+    "fixtures/northstar/**"
+  ],
+  "allowed_actions": [
+    "retail.generate_operations_brief"
+  ],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.compliance",
+      "when": "incident or floor condition requires regulatory grounding",
+      "carry": [
+        "store",
+        "topic"
+      ],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.workforce_roster",
+      "when": "coverage or duty-manager staffing affects response",
+      "carry": [
+        "store",
+        "role",
+        "shift_window"
+      ],
+      "requires_confirmation": true
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [
+      {
+        "key": "confirmed_ops_followup",
+        "description": "Confirmed store-ops follow-up item after incident review",
+        "requires_confirmation": true
+      }
+    ],
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "unverified_claims",
+      "guest_pii"
+    ]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": [
+      "no_invented_sops"
+    ]
+  },
+  "failure_policy": {
+    "on_missing_context": "dependency_required",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": [
+    "retail:read",
+    "retail:analyse"
+  ],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": [
+      "hat",
+      "store_ops",
+      "incident",
+      "floor"
+    ]
+  }
+}

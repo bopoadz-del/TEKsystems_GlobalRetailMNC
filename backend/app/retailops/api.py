@@ -5,6 +5,8 @@ Endpoints:
     GET  /v1/actions/{action_id}
     POST /v1/actions/{action_id}/execute
     POST /v1/ask                      (LangGraph orchestration)
+    GET  /v1/agents                   (discipline base + hats catalog)
+    GET  /v1/agents/{agent_id}
     POST /v1/documents                (ingest)
     GET  /v1/documents
     GET  /v1/audit
@@ -81,6 +83,7 @@ class ExecuteRequest(BaseModel):
 
 class AskRequest(BaseModel):
     question: str
+    disabled_agents: List[str] = Field(default_factory=list)
 
 
 class IngestRequest(BaseModel):
@@ -158,7 +161,10 @@ async def ask(
     context: ActionContext = Depends(get_context),
 ) -> Dict[str, Any]:
     outcome = await run_orchestrator(
-        session=session, context=context, question=body.question
+        session=session,
+        context=context,
+        question=body.question,
+        disabled_agents=body.disabled_agents,
     )
     session.commit()
     result = outcome.get("action_result")
@@ -170,6 +176,58 @@ async def ask(
         "action_result": result.to_dict() if result is not None else None,
         "execution_plan": outcome.get("execution_plan"),
     }
+
+
+# ---------------------------------------------------------------------------
+# Discipline agents (base + hats) — catalog, not a second orchestrator
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/agents")
+def list_agents(
+    composed: bool = True,
+    context: ActionContext = Depends(get_context),
+) -> Dict[str, Any]:
+    if not context.has_permission("retail:read"):
+        raise HTTPException(status_code=403, detail="missing retail:read")
+    from app.retailops.agents import get_agent_catalog
+
+    catalog = get_agent_catalog()
+    bases = [m.to_dict() for m in catalog.bases()]
+    if composed:
+        hats = [catalog.compose(h.agent_id) for h in catalog.hats()]
+    else:
+        hats = [h.to_dict() for h in catalog.hats()]
+    return {
+        "vendor_neutral": True,
+        "catalog_product": "TEKsystems RetailOps",
+        "base_count": len(bases),
+        "hat_count": len(hats),
+        "bases": bases,
+        "hats": hats,
+    }
+
+
+@router.get("/v1/agents/{agent_id}")
+def get_agent(
+    agent_id: str,
+    composed: bool = True,
+    context: ActionContext = Depends(get_context),
+) -> Dict[str, Any]:
+    if not context.has_permission("retail:read"):
+        raise HTTPException(status_code=403, detail="missing retail:read")
+    from app.retailops.agents import get_agent_catalog
+    from app.retailops.agents.catalog import AgentCatalogError
+
+    catalog = get_agent_catalog()
+    manifest = catalog.get(agent_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent '{agent_id}'")
+    if manifest.kind == "hat" and composed:
+        try:
+            return catalog.compose(agent_id)
+        except AgentCatalogError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return manifest.to_dict()
 
 
 # ---------------------------------------------------------------------------

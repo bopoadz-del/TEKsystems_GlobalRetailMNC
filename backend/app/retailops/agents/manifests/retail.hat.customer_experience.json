@@ -1,0 +1,126 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.customer_experience",
+  "kind": "hat",
+  "display_name": "Customer Experience Hat",
+  "discipline": "customer_experience",
+  "extends": "retail.base",
+  "summary": "Service quality, queue/complaint themes, and shopper-journey guidance without inventing guest PII.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      {
+        "type": "intent",
+        "value": "customer_experience"
+      },
+      {
+        "type": "keyword",
+        "value": "customer complaint"
+      },
+      {
+        "type": "keyword",
+        "value": "nps"
+      },
+      {
+        "type": "keyword",
+        "value": "queue"
+      },
+      {
+        "type": "keyword",
+        "value": "checkout wait"
+      },
+      {
+        "type": "keyword",
+        "value": "service level"
+      }
+    ],
+    "put_off_by": [
+      "disable:cx",
+      "disable:retail.hat.customer_experience"
+    ]
+  },
+  "context_sources": [
+    {
+      "source_id": "cx_docs",
+      "kind": "project_documents",
+      "doc_roles": [
+        "document",
+        "incident"
+      ],
+      "description": "Service and complaint-related project documents"
+    }
+  ],
+  "allowed_paths": [
+    "fixtures/northstar/**"
+  ],
+  "allowed_actions": [
+    "retail.generate_operations_brief"
+  ],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.workforce_roster",
+      "when": "service failures map to coverage gaps",
+      "carry": [
+        "store",
+        "role",
+        "shift_window"
+      ],
+      "requires_confirmation": true
+    },
+    {
+      "to_agent_id": "retail.hat.marketing",
+      "when": "experience themes affect campaign promises",
+      "carry": [
+        "theme",
+        "store"
+      ],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.store_operations",
+      "when": "floor conditions or incidents affect guests",
+      "carry": [
+        "store",
+        "topic"
+      ],
+      "requires_confirmation": false
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [],
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "guest_pii",
+      "unverified_claims"
+    ]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": [
+      "no_guest_pii"
+    ]
+  },
+  "failure_policy": {
+    "on_missing_context": "ask_clarifying",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": [
+    "retail:read"
+  ],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": [
+      "hat",
+      "cx",
+      "service",
+      "guest"
+    ]
+  }
+}

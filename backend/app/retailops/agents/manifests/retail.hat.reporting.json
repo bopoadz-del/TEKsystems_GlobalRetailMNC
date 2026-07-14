@@ -1,0 +1,126 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.reporting",
+  "kind": "hat",
+  "display_name": "Executive Reporting Hat",
+  "discipline": "reporting",
+  "extends": "retail.base",
+  "summary": "Cross-discipline rollups and learning overviews for retail leadership. Prefers action/learning outputs over invented KPIs.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      {
+        "type": "intent",
+        "value": "reporting"
+      },
+      {
+        "type": "keyword",
+        "value": "kpi"
+      },
+      {
+        "type": "keyword",
+        "value": "dashboard"
+      },
+      {
+        "type": "keyword",
+        "value": "executive summary"
+      },
+      {
+        "type": "keyword",
+        "value": "learning summary"
+      },
+      {
+        "type": "action_id",
+        "value": "retail.get_learning_summary"
+      }
+    ],
+    "put_off_by": [
+      "disable:reporting",
+      "disable:retail.hat.reporting"
+    ]
+  },
+  "context_sources": [
+    {
+      "source_id": "learning_rollups",
+      "kind": "learning_profiles",
+      "modules": [
+        "demand_reorder",
+        "supplier_fulfilment",
+        "promotion_effectiveness",
+        "store_exceptions"
+      ],
+      "description": "Verified learning profiles for rollups"
+    }
+  ],
+  "allowed_paths": [
+    "fixtures/northstar/**"
+  ],
+  "allowed_actions": [
+    "retail.generate_operations_brief",
+    "retail.get_learning_summary"
+  ],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.inventory",
+      "when": "summary depends on stock risk detail",
+      "carry": [
+        "sku",
+        "store"
+      ],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.accounting",
+      "when": "summary depends on margin or cost detail",
+      "carry": [
+        "sku",
+        "store"
+      ],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.workforce_roster",
+      "when": "summary depends on labor coverage",
+      "carry": [
+        "store"
+      ],
+      "requires_confirmation": false
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [],
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "unverified_claims"
+    ]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": false,
+    "refuse_unaided_figures": true,
+    "checks": [
+      "no_invented_kpis"
+    ]
+  },
+  "failure_policy": {
+    "on_missing_context": "dependency_required",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": [
+    "retail:read"
+  ],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": [
+      "hat",
+      "reporting",
+      "executive",
+      "rollup"
+    ]
+  }
+}

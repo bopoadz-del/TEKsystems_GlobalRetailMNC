@@ -10,12 +10,15 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Set
 
+from app.retailops.agents import get_agent_catalog
 from app.retailops.kit.contract import ActionContext, ActionRegistry, ActionSpec
 from app.retailops.kit.contract.models import RESERVED_CONTEXT_KEYS
 from app.retailops.reasoning.domain_map import (
     ACTION_IMPERATIVES,
+    DISCIPLINE_HAT_KEYWORDS,
     INTENT_ACTION_HINTS,
     INTENT_CUES,
+    INTENT_PRIMARY_HAT,
     RELATED_DOMAINS,
     RETAIL_INTENTS,
 )
@@ -126,6 +129,7 @@ class RetailOperationsReasoner:
         registry: ActionRegistry,
         context: ActionContext,
         arguments: Optional[Dict[str, Any]] = None,
+        disabled_agents: Optional[List[str]] = None,
     ) -> RetailExecutionPlan:
         q = (question or "").strip()
         if not q:
@@ -135,49 +139,64 @@ class RetailOperationsReasoner:
         registered = {s.action_id: s for s in registry.all()}
         notes: List[str] = []
         args = _sanitize_plan_arguments(arguments or {})
+        disabled = list(disabled_agents or [])
 
         # Explicit action addressing always wins when the id is known.
         explicit = re.search(r"action[:=]\s*([a-z_]+\.[a-z_]+)", q.lower())
         if explicit:
             action_id = explicit.group(1)
             if action_id not in registered:
-                return RetailExecutionPlan(
-                    primary_intent="unknown",
-                    confidence=1.0,
-                    route="unsupported",
-                    recommended_action_ids=[],
-                    related_domains=[],
-                    notes=[f"unregistered_action:{action_id}"],
-                    arguments=args,
+                return self._annotate(
+                    RetailExecutionPlan(
+                        primary_intent="unknown",
+                        confidence=1.0,
+                        route="unsupported",
+                        recommended_action_ids=[],
+                        related_domains=[],
+                        notes=[f"unregistered_action:{action_id}"],
+                        arguments=args,
+                    ),
+                    question=q,
+                    intent="unknown",
+                    disabled=disabled,
                 )
             if action_id not in permitted:
-                return RetailExecutionPlan(
-                    primary_intent=self._intent_for_action(action_id),
-                    confidence=1.0,
-                    route="unsupported",
-                    recommended_action_ids=[],
-                    related_domains=RELATED_DOMAINS.get(
-                        self._intent_for_action(action_id), []
+                intent = self._intent_for_action(action_id)
+                return self._annotate(
+                    RetailExecutionPlan(
+                        primary_intent=intent,
+                        confidence=1.0,
+                        route="unsupported",
+                        recommended_action_ids=[],
+                        related_domains=RELATED_DOMAINS.get(intent, []),
+                        notes=[f"action_not_permitted:{action_id}"],
+                        arguments=args,
+                        confirmation_required=bool(
+                            registered[action_id].confirmation_required
+                        ),
                     ),
-                    notes=[f"action_not_permitted:{action_id}"],
-                    arguments=args,
-                    confirmation_required=bool(
-                        registered[action_id].confirmation_required
-                    ),
+                    question=q,
+                    intent=intent,
+                    disabled=disabled,
                 )
             intent = self._intent_for_action(action_id)
             spec = permitted[action_id]
-            return RetailExecutionPlan(
-                primary_intent=intent,
-                confidence=1.0,
-                route="action",
-                recommended_action_ids=[action_id],
-                related_domains=list(RELATED_DOMAINS.get(intent, [])),
-                required_dependencies=self._dependency_hints(spec),
-                evidence_requirements=self._evidence_hints(intent),
-                arguments=args,
-                confirmation_required=bool(spec.confirmation_required),
-                notes=["explicit_action_addressing"],
+            return self._annotate(
+                RetailExecutionPlan(
+                    primary_intent=intent,
+                    confidence=1.0,
+                    route="action",
+                    recommended_action_ids=[action_id],
+                    related_domains=list(RELATED_DOMAINS.get(intent, [])),
+                    required_dependencies=self._dependency_hints(spec),
+                    evidence_requirements=self._evidence_hints(intent),
+                    arguments=args,
+                    confirmation_required=bool(spec.confirmation_required),
+                    notes=["explicit_action_addressing"],
+                ),
+                question=q,
+                intent=intent,
+                disabled=disabled,
             )
 
         intent, confidence = _score_intent(q)
@@ -189,15 +208,20 @@ class RetailOperationsReasoner:
         # or imperative verbs appear in the sentence.
         if is_question:
             notes.append("factual_question_stays_on_rag")
-            return RetailExecutionPlan(
-                primary_intent=intent,
-                confidence=confidence,
-                route="rag",
-                recommended_action_ids=[],
-                related_domains=related,
-                evidence_requirements=self._evidence_hints(intent),
-                arguments=args,
-                notes=notes,
+            return self._annotate(
+                RetailExecutionPlan(
+                    primary_intent=intent,
+                    confidence=confidence,
+                    route="rag",
+                    recommended_action_ids=[],
+                    related_domains=related,
+                    evidence_requirements=self._evidence_hints(intent),
+                    arguments=args,
+                    notes=notes,
+                ),
+                question=q,
+                intent=intent,
+                disabled=disabled,
             )
 
         # Match permitted actions by noun keywords and intent hints.
@@ -208,26 +232,36 @@ class RetailOperationsReasoner:
             # fabricate an answer from unrelated store documents).
             if looks_like_command:
                 notes.append("unsupported_command_no_registered_action")
-                return RetailExecutionPlan(
+                return self._annotate(
+                    RetailExecutionPlan(
+                        primary_intent=intent,
+                        confidence=confidence,
+                        route="unsupported",
+                        recommended_action_ids=[],
+                        related_domains=related,
+                        evidence_requirements=self._evidence_hints(intent),
+                        arguments=args,
+                        notes=notes,
+                    ),
+                    question=q,
+                    intent=intent,
+                    disabled=disabled,
+                )
+            notes.append("default_rag")
+            return self._annotate(
+                RetailExecutionPlan(
                     primary_intent=intent,
                     confidence=confidence,
-                    route="unsupported",
+                    route="rag",
                     recommended_action_ids=[],
                     related_domains=related,
                     evidence_requirements=self._evidence_hints(intent),
                     arguments=args,
                     notes=notes,
-                )
-            notes.append("default_rag")
-            return RetailExecutionPlan(
-                primary_intent=intent,
-                confidence=confidence,
-                route="rag",
-                recommended_action_ids=[],
-                related_domains=related,
-                evidence_requirements=self._evidence_hints(intent),
-                arguments=args,
-                notes=notes,
+                ),
+                question=q,
+                intent=intent,
+                disabled=disabled,
             )
 
         primary = candidates[0]
@@ -235,18 +269,82 @@ class RetailOperationsReasoner:
         notes.append(
             "imperative_action_match" if looks_like_command else "action_keyword_match"
         )
-        return RetailExecutionPlan(
-            primary_intent=intent if intent in RETAIL_INTENTS else "unknown",
-            confidence=max(confidence, 0.7),
-            route="action",
-            recommended_action_ids=candidates,
-            related_domains=related,
-            required_dependencies=self._dependency_hints(spec),
-            evidence_requirements=self._evidence_hints(intent),
-            arguments=args,
-            confirmation_required=bool(spec.confirmation_required),
-            notes=notes,
+        return self._annotate(
+            RetailExecutionPlan(
+                primary_intent=intent if intent in RETAIL_INTENTS else "unknown",
+                confidence=max(confidence, 0.7),
+                route="action",
+                recommended_action_ids=candidates,
+                related_domains=related,
+                required_dependencies=self._dependency_hints(spec),
+                evidence_requirements=self._evidence_hints(intent),
+                arguments=args,
+                confirmation_required=bool(spec.confirmation_required),
+                notes=notes,
+            ),
+            question=q,
+            intent=intent if intent in RETAIL_INTENTS else "unknown",
+            disabled=disabled,
         )
+
+    def _annotate(
+        self,
+        plan: RetailExecutionPlan,
+        *,
+        question: str,
+        intent: str,
+        disabled: List[str],
+    ) -> RetailExecutionPlan:
+        """Attach active discipline hats + handoff tips without changing route."""
+        catalog = get_agent_catalog()
+        active = catalog.enabled_hats(
+            disabled=disabled, question=question, intent=intent
+        )
+        active_ids = [h.agent_id for h in active]
+        primary = self._select_primary_hat(question, intent, active_ids)
+        handoffs: List[Dict[str, Any]] = []
+        if primary:
+            handoffs = catalog.recommend_handoffs(
+                primary,
+                related_domains=list(plan.related_domains or []),
+                include_all=True,
+            )
+        notes = list(plan.notes or [])
+        if primary:
+            notes.append(f"discipline_hat:{primary}")
+        if disabled:
+            notes.append(f"agents_put_off:{','.join(sorted(disabled))}")
+        return plan.model_copy(
+            update={
+                "active_agent_ids": active_ids,
+                "primary_agent_id": primary,
+                "handoff_tips": handoffs,
+                "notes": notes,
+            }
+        )
+
+    def _select_primary_hat(
+        self, question: str, intent: str, active_ids: List[str]
+    ) -> Optional[str]:
+        if not active_ids:
+            return None
+        lowered = question.lower()
+        # Keyword discipline overrides (accounting / HR / roster) win when active.
+        best_hat: Optional[str] = None
+        best_hits = 0
+        for hat_id, cues in DISCIPLINE_HAT_KEYWORDS.items():
+            if hat_id not in active_ids:
+                continue
+            hits = sum(1 for cue in cues if cue in lowered)
+            if hits > best_hits:
+                best_hits = hits
+                best_hat = hat_id
+        if best_hat:
+            return best_hat
+        preferred = INTENT_PRIMARY_HAT.get(intent)
+        if preferred and preferred in active_ids:
+            return preferred
+        return active_ids[0]
 
     def _intent_for_action(self, action_id: str) -> str:
         for intent, hints in INTENT_ACTION_HINTS.items():
