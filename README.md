@@ -37,6 +37,7 @@ Verified outcome (separate write flow)
    /v1/ask ─────────▶  LangGraph + RetailOperationsReasoner                     │
    /v1/actions ──────▶  Generic ActionRegistry + execute_action                 │
    /v1/agents ───────▶  Discipline base+hat catalog (composed manifests)        │
+   /v1/exports ──────▶  PDF / DOCX / XLSX generation (streamed download)         │
    /v1/learning/* ───▶  Advisory learning read APIs                             │
    /v1/documents ────▶  Ingestion (PDF/DOCX/TXT/MD/CSV/XLSX)                     │
    /v1/audit ────────▶  Audit (action_runs)                                     │
@@ -98,6 +99,32 @@ add a second orchestrator. Roster / staffing is first-class via
 GET /v1/agents
 GET /v1/agents/{agent_id}
 POST /v1/ask  { "question": "...", "disabled_agents": ["disable:roster"] }
+```
+
+## Document export (PDF / DOCX / XLSX)
+
+The platform both **ingests** and **generates** office documents:
+
+| Format | Ingest | Generate |
+| --- | --- | --- |
+| PDF | yes | yes (`retail.export_document`) |
+| Word DOCX | yes | yes |
+| Excel XLSX | yes | yes |
+
+Generation is ActionRegistry-backed (no second runtime). Artefacts are built
+in memory and returned as `document_base64` (Render disk is ephemeral) or
+streamed via `POST /v1/exports`.
+
+Document kinds: `operations_brief`, `inventory_risk`, `learning_summary`, `custom`.
+
+```
+# JSON + base64
+curl -s $H -X POST localhost:8000/v1/actions/retail.export_document/execute \
+  -d '{"arguments":{"format":"pdf","document_kind":"operations_brief","period":"daily"},"auto_context":true}'
+
+# Stream download
+curl -s $H -X POST localhost:8000/v1/exports \
+  -d '{"format":"xlsx","document_kind":"inventory_risk"}' -o inventory-risk.xlsx
 ```
 
 ## Retail Outcome Learning Layer

@@ -68,6 +68,7 @@
     "fixtures/northstar/**"
   ],
   "allowed_actions": [
+    "retail.export_document",
     "retail.generate_operations_brief"
   ],
   "handoffs": [

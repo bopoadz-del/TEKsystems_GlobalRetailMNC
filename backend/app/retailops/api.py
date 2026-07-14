@@ -7,6 +7,7 @@ Endpoints:
     POST /v1/ask                      (LangGraph orchestration)
     GET  /v1/agents                   (discipline base + hats catalog)
     GET  /v1/agents/{agent_id}
+    POST /v1/exports                  (stream PDF/DOCX/XLSX download)
     POST /v1/documents                (ingest)
     GET  /v1/documents
     GET  /v1/audit
@@ -228,6 +229,93 @@ def get_agent(
         except AgentCatalogError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     return manifest.to_dict()
+
+
+# ---------------------------------------------------------------------------
+# Document exports (PDF / DOCX / XLSX)
+# ---------------------------------------------------------------------------
+
+class ExportRequest(BaseModel):
+    format: str = Field(..., description="pdf | docx | xlsx")
+    document_kind: str = Field(
+        "custom",
+        description="custom | operations_brief | inventory_risk | learning_summary",
+    )
+    title: Optional[str] = None
+    subtitle: Optional[str] = None
+    source_output: Optional[Dict[str, Any]] = None
+    sections: Optional[List[Dict[str, Any]]] = None
+    table: Optional[Dict[str, Any]] = None
+    tables: Optional[List[Dict[str, Any]]] = None
+    period: Optional[str] = "daily"
+    store: Optional[str] = None
+    module: Optional[str] = None
+    profiles: Optional[List[Dict[str, Any]]] = None
+    auto_context: bool = True
+
+
+@router.post("/v1/exports")
+async def export_file(
+    body: ExportRequest,
+    session: Session = Depends(get_session),
+    context: ActionContext = Depends(get_context),
+):
+    """Generate and stream a PDF/DOCX/XLSX download."""
+    import base64
+
+    from fastapi.responses import Response
+
+    registry = service.build_registry()
+    spec = registry.resolve("retail.export_document")
+    if spec is None:
+        raise HTTPException(status_code=404, detail="export action not registered")
+
+    arguments: Dict[str, Any] = {
+        "format": body.format,
+        "document_kind": body.document_kind,
+        "include_base64": True,
+    }
+    for key in (
+        "title",
+        "subtitle",
+        "source_output",
+        "sections",
+        "table",
+        "tables",
+        "period",
+        "store",
+        "module",
+        "profiles",
+    ):
+        value = getattr(body, key)
+        if value is not None:
+            arguments[key] = value
+
+    if body.auto_context:
+        arguments = service.enrich_arguments(session, spec, context, arguments)
+    result = await service.execute_and_audit(
+        session, spec, context, arguments, confirmed=False
+    )
+    session.commit()
+    if result.status != ActionStatus.SUCCESS:
+        raise HTTPException(status_code=400, detail=result.to_dict())
+
+    payload = result.output or {}
+    raw_b64 = payload.get("document_base64")
+    if not raw_b64:
+        raise HTTPException(status_code=500, detail="export produced no document bytes")
+    data = base64.b64decode(raw_b64)
+    filename = str(payload.get("filename") or f"export.{body.format}")
+    content_type = str(payload.get("content_type") or "application/octet-stream")
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Export-Sha256": str(payload.get("sha256") or ""),
+            "X-Export-Request-Id": result.request_id,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

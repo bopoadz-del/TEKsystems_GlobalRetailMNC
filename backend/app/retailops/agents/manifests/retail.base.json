@@ -49,6 +49,7 @@
     "packs/retail_core_open_v1/seeds/**"
   ],
   "allowed_actions": [
+    "retail.export_document",
     "retail.generate_operations_brief",
     "retail.get_learning_summary"
   ],

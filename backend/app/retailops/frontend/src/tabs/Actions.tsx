@@ -1,6 +1,24 @@
 import { useEffect, useState } from "react";
 import { api, type ActionResult, type ActionSpec, type Principal } from "../api";
 
+function downloadBase64(b64: string, filename: string, contentType: string) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const blob = new Blob([bytes], { type: contentType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function omitBase64(output: Record<string, unknown>) {
+  const { document_base64: _drop, ...rest } = output;
+  return rest;
+}
+
 function ActionCard({ principal, spec }: { principal: Principal; spec: ActionSpec }) {
   const props = spec.input_schema.properties ?? {};
   const required = new Set(spec.input_schema.required ?? []);
@@ -84,7 +102,28 @@ function ActionCard({ principal, spec }: { principal: Principal; spec: ActionSpe
           {result.status === "success" && (
             <>
               <p className="muted">{result.evidence.length} evidence reference(s) · request {result.request_id}</p>
-              <pre>{JSON.stringify(result.output, null, 2)}</pre>
+              {typeof result.output.document_base64 === "string" && (
+                <p>
+                  <button
+                    className="primary"
+                    type="button"
+                    onClick={() =>
+                      downloadBase64(
+                        String(result.output.document_base64),
+                        String(result.output.filename || "export.bin"),
+                        String(result.output.content_type || "application/octet-stream"),
+                      )
+                    }
+                  >
+                    Download {String(result.output.filename || "file")}
+                  </button>
+                  <span className="muted">
+                    {" "}
+                    · {String(result.output.format || "")} · {String(result.output.byte_size || "")} bytes
+                  </span>
+                </p>
+              )}
+              <pre>{JSON.stringify(omitBase64(result.output), null, 2)}</pre>
             </>
           )}
         </div>

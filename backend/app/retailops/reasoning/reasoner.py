@@ -269,6 +269,24 @@ class RetailOperationsReasoner:
         notes.append(
             "imperative_action_match" if looks_like_command else "action_keyword_match"
         )
+        if primary == "retail.export_document":
+            args = dict(args)
+            lowered = q.lower()
+            if "format" not in args:
+                if "docx" in lowered or "word" in lowered:
+                    args["format"] = "docx"
+                elif "xlsx" in lowered or "excel" in lowered or "spreadsheet" in lowered:
+                    args["format"] = "xlsx"
+                else:
+                    args["format"] = "pdf"
+            if "document_kind" not in args:
+                if "inventory" in lowered or "stock" in lowered:
+                    args["document_kind"] = "inventory_risk"
+                elif "learning" in lowered:
+                    args["document_kind"] = "learning_summary"
+                else:
+                    args["document_kind"] = "operations_brief"
+            notes.append(f"export_defaults:{args.get('format')}:{args.get('document_kind')}")
         return self._annotate(
             RetailExecutionPlan(
                 primary_intent=intent if intent in RETAIL_INTENTS else "unknown",
@@ -412,6 +430,13 @@ class RetailOperationsReasoner:
             ("inventory risk", "retail.analyse_inventory_risk"),
             ("promotion compliance", "retail.check_promotion_compliance"),
             ("promotion for compliance", "retail.check_promotion_compliance"),
+            ("export pdf", "retail.export_document"),
+            ("export docx", "retail.export_document"),
+            ("export excel", "retail.export_document"),
+            ("export xlsx", "retail.export_document"),
+            ("export document", "retail.export_document"),
+            ("download pdf", "retail.export_document"),
+            ("download excel", "retail.export_document"),
         )
         for phrase, action_id in phrase_map:
             if phrase in lowered and action_id in permitted and action_id not in ordered:

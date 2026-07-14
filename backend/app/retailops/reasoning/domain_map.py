@@ -118,6 +118,7 @@ INTENT_ACTION_HINTS: Dict[str, Tuple[str, ...]] = {
     "reporting": (
         "retail.generate_operations_brief",
         "retail.get_learning_summary",
+        "retail.export_document",
     ),
     "unknown": (),
 }
@@ -135,4 +136,6 @@ ACTION_IMPERATIVES: Tuple[str, ...] = (
     "produce",
     "compute",
     "calculate",
+    "export",
+    "download",
 )

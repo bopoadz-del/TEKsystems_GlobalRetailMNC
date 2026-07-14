@@ -57,6 +57,7 @@
     "fixtures/northstar/**"
   ],
   "allowed_actions": [
+    "retail.export_document",
     "retail.generate_operations_brief",
     "retail.get_learning_summary"
   ],
@@ -153,6 +154,22 @@
         "implemented_by": "retail.get_learning_summary",
         "unit": null,
         "notes": "No invented KPIs \u2014 only rollups of evidenced profiles/action outputs."
+      },
+      {
+        "id": "reporting.export_bytes",
+        "name": "Export artefact checksum",
+        "expression": "sha256 = SHA256(document_bytes); downloadable = base64(document_bytes)",
+        "inputs": [
+          "document_bytes"
+        ],
+        "outputs": [
+          "sha256",
+          "document_base64",
+          "filename"
+        ],
+        "implemented_by": "retail.export_document",
+        "notes": "Supports pdf, docx, xlsx. Ephemeral \u2014 returned to client, not stored on disk.",
+        "unit": null
       }
     ],
     "standards": [
@@ -197,6 +214,30 @@
         "trigger": "KPI, dashboard, executive summary, learning summary",
         "handoff_to": null,
         "requires_confirmation": false
+      },
+      {
+        "id": "reporting.export_rollup",
+        "name": "Export executive artefact",
+        "trigger": "export pdf / docx / excel request",
+        "handoff_to": null,
+        "requires_confirmation": false,
+        "steps": [
+          {
+            "step": 1,
+            "action": "Choose document_kind (operations_brief, inventory_risk, learning_summary, or custom)",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Run retail.export_document with format pdf|docx|xlsx",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "Return filename, sha256, and document_base64 (or stream via POST /v1/exports)",
+            "requires_confirmation": false
+          }
+        ]
       }
     ]
   }

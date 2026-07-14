@@ -692,6 +692,119 @@ async def recommend_reorder_parameters(
 
 
 # ---------------------------------------------------------------------------
+# G. export_document
+# ---------------------------------------------------------------------------
+
+async def export_document(
+    context: ActionContext, arguments: Dict[str, Any]
+) -> ActionOutcome:
+    """Generate PDF / DOCX / XLSX bytes from structured retail content."""
+    from app.retailops.exports import (
+        build_export,
+        document_from_custom,
+        document_from_inventory_risk,
+        document_from_learning_summary,
+        document_from_operations_brief,
+    )
+
+    fmt = str(arguments.get("format") or "").lower()
+    kind = str(arguments.get("document_kind") or "custom").lower()
+    if fmt not in {"pdf", "docx", "xlsx"}:
+        return ActionOutcome(
+            status=ActionStatus.VALIDATION_ERROR,
+            error_code="invalid_format",
+            error_message="format must be one of pdf, docx, xlsx",
+        )
+
+    title = str(arguments.get("title") or "").strip()
+    source = arguments.get("source_output")
+    include_base64 = arguments.get("include_base64")
+    if include_base64 is None:
+        include_base64 = True
+
+    if kind == "operations_brief":
+        if not isinstance(source, dict):
+            # Default period so nested brief generation validates.
+            brief_args = dict(arguments)
+            brief_args.setdefault("period", "daily")
+            brief = await generate_operations_brief(context, brief_args)
+            if brief.status != ActionStatus.SUCCESS:
+                return brief
+            source = brief.output
+            evidence = list(brief.evidence)
+        else:
+            evidence = []
+        document = document_from_operations_brief(
+            source, title=title or "Operations Brief"
+        )
+    elif kind == "inventory_risk":
+        if not isinstance(source, dict):
+            risk = await analyse_inventory_risk(context, arguments)
+            if risk.status != ActionStatus.SUCCESS:
+                return risk
+            source = risk.output
+            evidence = list(risk.evidence)
+        else:
+            evidence = []
+        document = document_from_inventory_risk(
+            source, title=title or "Inventory Risk Report"
+        )
+    elif kind == "learning_summary":
+        if not isinstance(source, dict):
+            # Prefer explicit profiles payload; else empty table with advisory note.
+            profiles = arguments.get("profiles")
+            if profiles is None:
+                summary = await get_learning_summary(context, arguments)
+                if summary.status != ActionStatus.SUCCESS:
+                    return summary
+                source = summary.output
+                evidence = list(summary.evidence)
+            else:
+                source = {"profiles": profiles, "advisory_only": True}
+                evidence = []
+        else:
+            evidence = []
+        document = document_from_learning_summary(
+            source, title=title or "Learning Summary"
+        )
+    else:
+        sections = arguments.get("sections") or []
+        table = arguments.get("table")
+        tables = arguments.get("tables")
+        if not sections and not table and not tables:
+            return ActionOutcome.dependency(
+                [
+                    ActionDependency(
+                        kind="export_content",
+                        description=(
+                            "Provide sections/table content, or use document_kind "
+                            "operations_brief / inventory_risk / learning_summary"
+                        ),
+                        hint="Pass source_output from a prior action, or custom sections.",
+                    )
+                ]
+            )
+        document = document_from_custom(
+            title=title or "RetailOps Export",
+            subtitle=str(arguments.get("subtitle") or ""),
+            sections=sections,
+            table=table,
+            tables=tables,
+        )
+        evidence = []
+
+    if arguments.get("subtitle") and not document.subtitle:
+        document.subtitle = str(arguments["subtitle"])
+
+    built = build_export(document, fmt)  # type: ignore[arg-type]
+    output = built.to_public_dict(include_base64=bool(include_base64))
+    output["document_kind"] = kind
+    output["title"] = document.title
+    output["advisory_only"] = True
+    return ActionOutcome.success(output, evidence=evidence)
+
+
+# ---------------------------------------------------------------------------
 # Action specifications (discovered by the registry)
 # ---------------------------------------------------------------------------
 
@@ -830,5 +943,31 @@ ACTION_SPECS: List[ActionSpec] = [
         ),
         evaluation_fixtures=["reorder_recommend_happy", "reorder_recommend_no_profile"],
         handler=recommend_reorder_parameters,
+    ),
+    ActionSpec(
+        action_id="retail.export_document",
+        domain="retail",
+        name="Export Document",
+        description=(
+            "Generate a downloadable PDF, Word (DOCX), or Excel (XLSX) document "
+            "from an operations brief, inventory risk analysis, learning summary, "
+            "or custom sections/tables."
+        ),
+        version="1.0.0",
+        kit_version=RETAIL_KIT_VERSION,
+        input_schema=S.EXPORT_DOCUMENT_INPUT,
+        output_schema=S.EXPORT_DOCUMENT_OUTPUT,
+        required_context=["tenant_id", "project_id"],
+        permissions=[_PERM_READ],
+        risk_classification="low",
+        read_only=True,
+        confirmation_required=False,
+        synthesis_instructions=(
+            "Confirm the file was generated. Report filename, format, and byte size. "
+            "Do not invent figures beyond the exported content. Mention that "
+            "document_base64 can be downloaded by the client."
+        ),
+        evaluation_fixtures=["export_document_custom_pdf"],
+        handler=export_document,
     ),
 ]

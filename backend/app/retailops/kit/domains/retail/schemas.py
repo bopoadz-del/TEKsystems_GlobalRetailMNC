@@ -338,3 +338,83 @@ def present_fields(rows: List[Dict[str, Any]]) -> set:
     for row in rows:
         fields.update(row.keys())
     return fields
+
+
+# ---------------------------------------------------------------------------
+# G. export_document
+# ---------------------------------------------------------------------------
+
+EXPORT_DOCUMENT_INPUT = {
+    "type": "object",
+    "properties": {
+        "format": {"type": "string", "enum": ["pdf", "docx", "xlsx"]},
+        "document_kind": {
+            "type": "string",
+            "enum": [
+                "custom",
+                "operations_brief",
+                "inventory_risk",
+                "learning_summary",
+            ],
+        },
+        "title": {"type": "string"},
+        "subtitle": {"type": "string"},
+        "source_output": {"type": "object"},
+        "sections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "heading": {"type": "string"},
+                    "paragraphs": {"type": "array", "items": {"type": "string"}},
+                    "bullets": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+        },
+        "table": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "headers": {"type": "array", "items": {"type": "string"}},
+                "rows": {
+                    "type": "array",
+                    "items": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+        },
+        "tables": {"type": "array", "items": {"type": "object"}},
+        "include_base64": {"type": "boolean"},
+        "period": {"type": "string", "enum": ["daily", "weekly"]},
+        "store": {"type": "string"},
+        "records": {"type": "array", "items": _RECORD_SCHEMA},
+        "rows": {"type": "array", "items": {"type": "object"}},
+        "module": {"type": "string"},
+        "profiles": {"type": "array", "items": {"type": "object"}},
+    },
+    "required": ["format", "document_kind"],
+}
+
+EXPORT_DOCUMENT_OUTPUT = {
+    "type": "object",
+    "properties": {
+        "filename": {"type": "string"},
+        "content_type": {"type": "string"},
+        "format": {"type": "string"},
+        "byte_size": {"type": "integer"},
+        "sha256": {"type": "string"},
+        "generated_at": {"type": "string"},
+        "document_base64": {"type": "string"},
+        "document_kind": {"type": "string"},
+        "title": {"type": "string"},
+        "advisory_only": {"type": "boolean"},
+    },
+    "required": [
+        "filename",
+        "content_type",
+        "format",
+        "byte_size",
+        "sha256",
+        "document_kind",
+        "title",
+    ],
+}

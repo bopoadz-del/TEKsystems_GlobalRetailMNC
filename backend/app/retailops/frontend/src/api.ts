@@ -139,6 +139,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ arguments: args, auto_context: true, confirm }),
     }),
+  exportDocument: async (
+    p: Principal,
+    body: Record<string, unknown>,
+  ): Promise<Blob> => {
+    const res = await fetch(`${BASE}/v1/exports`, {
+      method: "POST",
+      headers: { ...headers(p) },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      throw new Error(`${res.status}: ${await res.text()}`);
+    }
+    return res.blob();
+  },
   audit: (p: Principal) => req<{ runs: { request_id: string; action_id: string; user_id: string; status: string; started_at: string; duration_ms: number; evidence_count: number }[] }>("/v1/audit", p),
   learningSummary: (p: Principal, module?: string) =>
     req<{ advisory_only: boolean; count: number; profiles: LearningProfile[] }>(

@@ -57,8 +57,9 @@
   ],
   "allowed_actions": [
     "retail.analyse_inventory_risk",
-    "retail.recommend_reorder_parameters",
+    "retail.export_document",
     "retail.get_learning_summary",
+    "retail.recommend_reorder_parameters",
     "retail.record_verified_outcome"
   ],
   "handoffs": [
