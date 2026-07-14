@@ -47,6 +47,8 @@ def ensure_platform_project(session: Session) -> str:
 
 
 def _canon_text(text: str) -> str:
+    # PDF extractors can emit NUL bytes; Postgres text rejects them.
+    text = text.replace("\x00", "")
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)

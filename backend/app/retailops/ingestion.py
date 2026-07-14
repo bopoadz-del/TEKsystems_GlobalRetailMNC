@@ -69,8 +69,13 @@ def detect_type(filename: str, content_type: Optional[str] = None) -> str:
 # Parsers
 # ---------------------------------------------------------------------------
 
+def _strip_nuls(text: str) -> str:
+    """Postgres text columns reject NUL (0x00) bytes from PDF extractors."""
+    return text.replace("\x00", "") if text else text
+
+
 def _parse_text(data: bytes) -> List[ParsedUnit]:
-    text = data.decode("utf-8", errors="replace")
+    text = _strip_nuls(data.decode("utf-8", errors="replace"))
     return [ParsedUnit(text=text, unit_type="text")]
 
 
@@ -80,7 +85,7 @@ def _parse_pdf(data: bytes) -> List[ParsedUnit]:
     reader = PdfReader(io.BytesIO(data))
     units: List[ParsedUnit] = []
     for i, page in enumerate(reader.pages, start=1):
-        text = (page.extract_text() or "").strip()
+        text = _strip_nuls(page.extract_text() or "").strip()
         if text:
             units.append(ParsedUnit(text=text, page=i, unit_type="text"))
     return units
@@ -90,10 +95,10 @@ def _parse_docx(data: bytes) -> List[ParsedUnit]:
     import docx
 
     document = docx.Document(io.BytesIO(data))
-    parts = [p.text for p in document.paragraphs if p.text and p.text.strip()]
+    parts = [_strip_nuls(p.text) for p in document.paragraphs if p.text and p.text.strip()]
     for table in document.tables:
         for row in table.rows:
-            cells = [c.text.strip() for c in row.cells]
+            cells = [_strip_nuls(c.text.strip()) for c in row.cells]
             if any(cells):
                 parts.append(" | ".join(cells))
     return [ParsedUnit(text="\n".join(parts), unit_type="text")] if parts else []
