@@ -236,7 +236,9 @@ def ingest_text_source(
 
     embedder = get_embedder()
     texts = [u.text for u in units]
+    # Live path: FastEmbedProvider bulk-embeds with BAAI/bge-small-en-v1.5.
     vectors = embedder.embed_batch(texts) if texts else []
+    embedding_model = getattr(embedder, "model_name", None) or embedder.__class__.__name__
 
     doc = Document(
         id=document_id,
@@ -266,8 +268,7 @@ def ingest_text_source(
                 meta={
                     **lineage,
                     "section": unit.text.split("\n", 1)[0][:120],
-                    "embedding_model": getattr(embedder, "model_name", None)
-                    or embedder.__class__.__name__,
+                    "embedding_model": embedding_model,
                     "embedding_dimension": embedder.dim,
                 },
             )
@@ -291,7 +292,12 @@ def ingest_text_source(
         publisher=meta.get("publisher"),
         content_checksum=checksum,
         resolved_download_url=acq.get("resolved_download_url"),
-        acquisition_record=acq,
+        acquisition_record={
+            **acq,
+            "embedding_model": embedding_model,
+            "embedding_dimension": embedder.dim,
+            "embedding_batch": True,
+        },
         document_count=1,
         chunk_count=len(units),
         status="ingested",
@@ -308,6 +314,8 @@ def ingest_text_source(
         "chunk_count": len(units),
         "status": "ingested",
         "project_id": project_id,
+        "embedding_model": embedding_model,
+        "embedding_dimension": embedder.dim,
     }
 
 

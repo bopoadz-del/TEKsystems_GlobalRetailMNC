@@ -67,31 +67,43 @@ class FastEmbedProvider(EmbeddingProvider):  # pragma: no cover - optional heavy
     """ONNX BGE-small embedder via fastembed (real semantic path)."""
 
     model_name = "BAAI/bge-small-en-v1.5"
+    # Micro-batches keep peak memory bounded for full-document pack ingest.
+    DEFAULT_BATCH_SIZE = 64
 
-    def __init__(self, dim: int = EMBED_DIM) -> None:
+    def __init__(self, dim: int = EMBED_DIM, batch_size: int = DEFAULT_BATCH_SIZE) -> None:
         from fastembed import TextEmbedding
         import numpy as np
 
         self._np = np
         self._model = TextEmbedding(model_name=self.model_name)
         self.dim = dim
+        self.batch_size = max(1, int(batch_size))
 
     def embed(self, text: str) -> List[float]:
         return self.embed_batch([text])[0]
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
+        """Bulk-embed with BGE in fixed-size batches (full-corpus ingest safe)."""
+        if not texts:
+            return []
         out: List[List[float]] = []
-        for arr in self._model.embed(list(texts)):
-            v = self._np.asarray(arr, dtype="float32")
-            if v.shape[0] > self.dim:
-                v = v[: self.dim]
-            elif v.shape[0] < self.dim:
-                pad = self._np.zeros(self.dim - v.shape[0], dtype="float32")
-                v = self._np.concatenate([v, pad])
-            n = float(self._np.linalg.norm(v))
-            if n > 0:
-                v = v / n
-            out.append(v.tolist())
+        for start in range(0, len(texts), self.batch_size):
+            chunk = list(texts[start : start + self.batch_size])
+            for arr in self._model.embed(chunk):
+                v = self._np.asarray(arr, dtype="float32")
+                if v.shape[0] > self.dim:
+                    v = v[: self.dim]
+                elif v.shape[0] < self.dim:
+                    pad = self._np.zeros(self.dim - v.shape[0], dtype="float32")
+                    v = self._np.concatenate([v, pad])
+                n = float(self._np.linalg.norm(v))
+                if n > 0:
+                    v = v / n
+                out.append(v.tolist())
+        if len(out) != len(texts):
+            raise RuntimeError(
+                f"BGE embed_batch size mismatch: got {len(out)} vectors for {len(texts)} texts"
+            )
         return out
 
 
@@ -102,10 +114,9 @@ def get_embedder(config: Optional[RetailOpsConfig] = None) -> EmbeddingProvider:
     config = config or get_config()
     backend = (config.embed_backend or "hash").lower()
     if backend in ("fastembed", "bge", "real"):
-        try:
-            _provider = FastEmbedProvider(config.embed_dim)
-        except Exception:
-            _provider = HashEmbeddingProvider(config.embed_dim)
+        # Do not silently fall back to hash when BGE was explicitly requested —
+        # pack ingest must record real semantic vectors or fail loudly.
+        _provider = FastEmbedProvider(config.embed_dim)
     else:
         _provider = HashEmbeddingProvider(config.embed_dim)
     return _provider
