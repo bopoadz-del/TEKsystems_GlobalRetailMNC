@@ -112,6 +112,19 @@ GET /v1/agents/{agent_id}
 POST /v1/ask  { "question": "...", "disabled_agents": ["disable:roster"] }
 ```
 
+## LLM provider (Ollama Cloud)
+
+Production default is **Ollama Cloud** (OpenAI-compatible):
+
+| Env | Value |
+| --- | --- |
+| `RETAILOPS_LLM_PROVIDER` | `ollama` |
+| `OPENAI_BASE_URL` | `https://ollama.com/v1` |
+| `RETAILOPS_LLM_MODEL` | `ministral-3:8b` (swap anytime) |
+| `OLLAMA_API_KEY` | **Dashboard secret** (`sync: false` — never commit) |
+
+Without a key, `auto` falls back to the deterministic `FakeProvider` (tests/local).
+
 ## Document export (PDF / DOCX / XLSX)
 
 The platform both **ingests** and **generates** office documents:
