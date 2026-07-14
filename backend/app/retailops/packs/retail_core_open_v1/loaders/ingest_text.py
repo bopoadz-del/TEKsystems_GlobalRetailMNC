@@ -136,6 +136,12 @@ def ingest_text_source(
                 fixture_path = candidate
                 break
 
+    # Prefer cleaned FTC text seed when present (full HTML OOMs starter jobs).
+    if source_id == "ftc_advertising_faqs":
+        ftc_seed = Path(__file__).resolve().parents[1] / "seeds" / "ftc_advertising_faqs.txt"
+        if ftc_seed.exists() and (fixture_path is None or prefer_network):
+            fixture_path = ftc_seed
+
     try:
         acq = acquire_source(source_id, fixture_path=fixture_path, force=force)
     except Exception as exc:
