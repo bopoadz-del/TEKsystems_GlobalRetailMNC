@@ -65,7 +65,7 @@
     }
   ],
   "allowed_paths": [
-    "fixtures/northstar/**"
+    "fixtures/demo/**"
   ],
   "allowed_actions": [
     "retail.export_document",

@@ -1,0 +1,319 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------
+  # 1. Backend unit / contract tests — no database required.
+  # ---------------------------------------------------------------------
+  unit-contract:
+    name: Backend unit/contract
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/retailops/deploy/requirements.txt pytest pytest-asyncio httpx
+      - name: Run non-DB unit/contract suite
+        env:
+          RETAILOPS_EMBED_BACKEND: hash
+          RETAILOPS_SKIP_MIGRATIONS: "1"
+          # GitHub Actions sets CI=true for every job by default; conftest.py
+          # treats CI=true as "a missing DB must fail, never skip" (by design,
+          # for the db-integration job below). This job intentionally has no
+          # Postgres service container, so override it back to false here —
+          # db-integration is the job that gates real DB behaviour.
+          CI: "false"
+        run: |
+          PYTHONPATH=. pytest -q -k "not route" \
+            tests/retailops/test_embedding_guard.py \
+            tests/retailops/test_auth_cors.py \
+            tests/retailops/test_discipline_agents.py \
+            tests/retailops/test_providers.py \
+            tests/retailops/test_audit_hardcut.py::test_evaluation_fixtures_cover_all_action_spec_names \
+            tests/retailops/test_audit_hardcut.py::test_allowed_actions_composed_for_inventory_includes_risk \
+            tests/retailops/test_audit_hardcut.py::test_reasoner_blocks_action_outside_hat_allowlist \
+            tests/retailops/test_audit_hardcut.py::test_playbook_refs_include_executable_and_memory_keys \
+            tests/retailops/test_audit_hardcut.py::test_applied_formulas_on_inventory_action \
+            tests/retailops/test_audit_hardcut.py::test_inventory_action_emits_applied_formulas \
+            tests/retailops/test_audit_hardcut.py::test_no_dangling_packs_paths \
+            tests/retailops/test_reasoning_learning.py::test_reasoner_inventory_command_recommends_registered_only \
+            tests/retailops/test_reasoning_learning.py::test_reasoner_unknown_does_not_fabricate_action \
+            tests/retailops/test_reasoning_learning.py::test_reasoner_unsupported_imperative_book_flight \
+            tests/retailops/test_reasoning_learning.py::test_reasoner_unregistered_action_unsupported \
+            tests/retailops/test_reasoning_learning.py::test_reasoner_new_action_available_without_router_edits \
+            tests/retailops/test_reasoning_learning.py::test_demand_calibration_math_and_confidence \
+            tests/retailops/test_reasoning_learning.py::test_supplier_learning_math \
+            tests/retailops/test_reasoning_learning.py::test_promotion_learning_zero_baseline_safe \
+            tests/retailops/test_reasoning_learning.py::test_exception_detection_severity_and_ranking \
+            tests/retailops/test_integrations.py
+
+  # ---------------------------------------------------------------------
+  # 2. Real Postgres + pgvector integration — never skips in CI.
+  # ---------------------------------------------------------------------
+  db-integration:
+    name: Postgres + pgvector integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: retailops
+          POSTGRES_PASSWORD: retailops
+          POSTGRES_DB: retailops_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U retailops -d retailops_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      RETAILOPS_TEST_DATABASE_URL: postgresql+psycopg://retailops:retailops@localhost:5432/retailops_test
+      RETAILOPS_DATABASE_URL: postgresql+psycopg://retailops:retailops@localhost:5432/retailops_test
+      RETAILOPS_EMBED_BACKEND: hash
+      RETAILOPS_SKIP_MIGRATIONS: "1"
+      RETAILOPS_REQUIRE_DB: "1"
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/retailops/deploy/requirements.txt pytest httpx pytest-asyncio
+      - name: Enable pgvector extension
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          url = os.environ["RETAILOPS_TEST_DATABASE_URL"]
+          eng = create_engine(url)
+          with eng.begin() as conn:
+              conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+          print("pgvector ready")
+          PY
+      - name: Run full RetailOps suite (fails, never skips, if DB is unreachable)
+        run: PYTHONPATH=. pytest tests/retailops -q --tb=short
+
+  # ---------------------------------------------------------------------
+  # 3. Frontend — npm ci / lint / tsc / build.
+  # ---------------------------------------------------------------------
+  frontend:
+    name: Frontend npm ci/lint/build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/app/retailops/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/app/retailops/frontend/package-lock.json
+      - name: Install
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Lint
+        run: npm run lint --if-present
+      - name: Typecheck + build (tsc -b && vite build)
+        run: npm run build
+
+  # ---------------------------------------------------------------------
+  # 4. Docker image build + container health check.
+  # ---------------------------------------------------------------------
+  docker-build:
+    name: Docker build + health
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: retailops
+          POSTGRES_PASSWORD: retailops
+          POSTGRES_DB: retailops_docker_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U retailops -d retailops_docker_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable pgvector extension
+        run: |
+          docker run --rm --network host -e PGPASSWORD=retailops postgres:16-alpine \
+            psql -h 127.0.0.1 -U retailops -d retailops_docker_ci -c "CREATE EXTENSION IF NOT EXISTS vector"
+      - name: Build image
+        run: docker build -f backend/app/retailops/deploy/Dockerfile -t retailops:ci .
+      - name: Run container (fake LLM, API key gate on, real Postgres, mandatory startup migrations)
+        run: |
+          docker run -d --name retailops-ci --network host \
+            -e RETAILOPS_LLM_PROVIDER=fake \
+            -e RETAILOPS_EMBED_BACKEND=hash \
+            -e RETAILOPS_API_KEY=ci-docker-e2e-key \
+            -e RETAILOPS_CORS_ORIGINS=https://ci.example.com \
+            -e RETAILOPS_ENV=production \
+            -e RETAILOPS_DATABASE_URL=postgresql+psycopg://retailops:retailops@127.0.0.1:5432/retailops_docker_ci \
+            -e PORT=8000 \
+            retailops:ci
+      - name: Wait for /health
+        run: |
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/health || true)
+            if [ "$code" = "200" ]; then echo "healthy"; break; fi
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8000/health
+      - name: API key gate is enforced inside the container
+        run: |
+          # This checks the ApiKeyMiddleware shared-secret gate in isolation,
+          # not full request authorisation — the fresh container has an empty,
+          # migrated-only DB (no fixtures loaded), so "u"/"t"/"p" is not a real
+          # principal and correctly fails deeper auth (403) once past the gate.
+          # No key -> denied by the gate itself (health stays public).
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'X-User-Id: u' -H 'X-Tenant-Id: t' -H 'X-Project-Id: p' http://127.0.0.1:8000/v1/actions)
+          test "$code" = "401"
+          # Wrong key -> still denied by the gate itself.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'X-API-Key: wrong-key' -H 'X-User-Id: u' -H 'X-Tenant-Id: t' -H 'X-Project-Id: p' http://127.0.0.1:8000/v1/actions)
+          test "$code" = "401"
+          # Correct key -> passes the gate (never 401 again); deeper auth then
+          # legitimately 403s the unknown/unseeded principal in defense-in-depth.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'X-API-Key: ci-docker-e2e-key' -H 'X-User-Id: u' -H 'X-Tenant-Id: t' -H 'X-Project-Id: p' http://127.0.0.1:8000/v1/actions)
+          test "$code" = "403"
+      - name: Container logs (always, for diagnostics)
+        if: always()
+        run: docker logs retailops-ci || true
+      - name: Stop container
+        if: always()
+        run: docker rm -f retailops-ci || true
+
+  # ---------------------------------------------------------------------
+  # 5. E2E release oracle — full stack (migrate, fixtures, live server).
+  # ---------------------------------------------------------------------
+  e2e-release-oracle:
+    name: E2E release oracle (full stack)
+    needs: [db-integration]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: retailops
+          POSTGRES_PASSWORD: retailops
+          POSTGRES_DB: retailops_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U retailops -d retailops_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      RETAILOPS_DATABASE_URL: postgresql+psycopg://retailops:retailops@localhost:5432/retailops_test
+      RETAILOPS_EMBED_BACKEND: hash
+      RETAILOPS_SKIP_MIGRATIONS: "0"
+      RETAILOPS_LLM_PROVIDER: fake
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/app/retailops/frontend/package-lock.json
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/app/retailops/deploy/requirements.txt
+      - name: Build frontend (app_factory serves dist/ at "/" when present)
+        working-directory: backend/app/retailops/frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Enable pgvector + migrate + load demo + HF mini packs
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          url = os.environ["RETAILOPS_DATABASE_URL"]
+          eng = create_engine(url)
+          with eng.begin() as conn:
+              conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+          from app.retailops.migrations_runner import upgrade_to_head
+          upgrade_to_head(url)
+          from app.retailops.db import init_engine, session_scope
+          init_engine()
+          from app.retailops.fixtures.loader import load_fixtures
+          with session_scope() as session:
+              ids = load_fixtures(session)
+          print("fixture projects:", ids)
+          open("/tmp/retailops_project_id.txt", "w").write(ids.get("Global Region") or next(iter(ids.values())))
+          PY
+          PYTHONPATH=. python -m app.retailops.packs.load_retail_core_open_v1 --profile mini
+          PYTHONPATH=. python -m app.retailops.packs.load_hf_retail_packs --pack all --profile mini --force
+      - name: Start API
+        working-directory: backend
+        run: |
+          PYTHONPATH=. uvicorn app.retailops.app_factory:app --host 127.0.0.1 --port 8000 &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8000/health && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8000/health
+      - name: Oracle smoke (regional fixtures)
+        run: |
+          PID=$(cat /tmp/retailops_project_id.txt)
+          python scripts/oracle_smoke.py --base-url http://127.0.0.1:8000 \
+            --user u_ops_manager --tenant retail --project "$PID"
+      - name: Release gate (six-question regression, platform principal)
+        run: |
+          python scripts/release_gate.py --base-url http://127.0.0.1:8000 \
+            --user u_platform --tenant platform --project prj_prebuilt_retail_core
+
+  # ---------------------------------------------------------------------
+  # 6. Retrieval eval → docs/retrieval_eval_report.md + artifacts JSON.
+  # ---------------------------------------------------------------------
+  retrieval-eval:
+    name: Retrieval eval report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run offline retrieval eval
+        run: python scripts/retrieval_eval.py
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrieval-eval
+          path: |
+            docs/retrieval_eval_report.md
+            artifacts/retrieval_eval.json

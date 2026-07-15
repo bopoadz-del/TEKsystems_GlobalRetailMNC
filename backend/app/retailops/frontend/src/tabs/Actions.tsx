@@ -15,7 +15,8 @@ function downloadBase64(b64: string, filename: string, contentType: string) {
 }
 
 function omitBase64(output: Record<string, unknown>) {
-  const { document_base64: _drop, ...rest } = output;
+  const rest = { ...output };
+  delete rest.document_base64;
   return rest;
 }
 

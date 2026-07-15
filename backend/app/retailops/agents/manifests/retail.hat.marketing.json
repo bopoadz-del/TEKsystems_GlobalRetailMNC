@@ -56,7 +56,7 @@
     }
   ],
   "allowed_paths": [
-    "fixtures/northstar/*/promotion_*"
+    "fixtures/demo/*/promotion_*"
   ],
   "allowed_actions": [
     "retail.check_promotion_compliance",
@@ -200,7 +200,7 @@
         "id": "marketing.ftc_claims",
         "name": "Advertising claim caution",
         "kind": "regulatory",
-        "ref": "fixtures/northstar/**",
+        "ref": "fixtures/demo/**",
         "must_cite": true,
         "description": "Advertising claims with FTC/display risk must hand off to compliance."
       }

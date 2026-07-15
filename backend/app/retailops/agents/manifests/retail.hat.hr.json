@@ -52,7 +52,7 @@
     }
   ],
   "allowed_paths": [
-    "fixtures/northstar/**"
+    "fixtures/demo/**"
   ],
   "allowed_actions": [
     "retail.generate_operations_brief"

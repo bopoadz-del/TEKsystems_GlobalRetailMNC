@@ -34,6 +34,7 @@ def test_list_and_get_actions(client, loaded_projects):
         "retail.record_verified_outcome",
         "retail.get_learning_summary",
         "retail.recommend_reorder_parameters",
+        "retail.export_document",
     }
     r2 = client.get("/v1/actions/retail.analyse_inventory_risk", headers=_headers(MANAGER, pid))
     assert r2.status_code == 200

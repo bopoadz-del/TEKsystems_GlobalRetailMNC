@@ -52,7 +52,7 @@
     }
   ],
   "allowed_paths": [
-    "fixtures/northstar/**"
+    "fixtures/demo/**"
   ],
   "allowed_actions": [
     "retail.check_promotion_compliance"
@@ -153,7 +153,7 @@
         "id": "compliance.cite_or_refuse",
         "name": "Cite or refuse",
         "kind": "regulatory",
-        "ref": "fixtures/northstar/**",
+        "ref": "fixtures/demo/**",
         "must_cite": true,
         "description": "Every policy claim needs retrieved citation URLs; low confidence blocks."
       },

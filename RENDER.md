@@ -6,7 +6,7 @@
 |----------|------|--------|
 | Web | `retailops` | Docker, health `/health` |
 | DB | `retailops-db` | Postgres 16 (+ pgvector extension on first migrate) |
-| URL | https://retailops-3ayp.onrender.com | Auto-deploy from `feat/retailops-platform-v1` (the active development branch; `main` is behind and not what's live) |
+| URL | https://retailops-3ayp.onrender.com | Auto-deploy from `main` (post-certification; `main` is now the deployed branch of record — see `docs/release_verification.md`) |
 
 Blueprint source: root [`render.yaml`](render.yaml) (mirrors
 `backend/app/retailops/deploy/render.yaml`).
@@ -24,7 +24,7 @@ Never commit API keys. Prefer dashboard/secret injection.
 
 ## Redeploy
 
-After pushing to `feat/retailops-platform-v1` (the branch this service auto-deploys from):
+After merging to `main` (the branch this service auto-deploys from):
 
 ```bash
 # auto-deploy should fire; or force:

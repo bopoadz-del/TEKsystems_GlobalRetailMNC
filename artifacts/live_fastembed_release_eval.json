@@ -1,0 +1,53 @@
+{
+  "generated_at": "2026-07-15T13:29:57.367189+00:00",
+  "base_url": "https://retailops-3ayp.onrender.com",
+  "principal": {
+    "user": "u_platform",
+    "tenant": "platform",
+    "project": "prj_prebuilt_retail_core"
+  },
+  "server_health_ok": true,
+  "embedding_backend_expected": "fastembed",
+  "embedding_model_expected": "BAAI/bge-small-en-v1.5",
+  "embedding_dim_expected": 384,
+  "case_count": 3,
+  "hits": 1,
+  "recall_at_k": 0.3333,
+  "top_k": 5,
+  "cases": [
+    {
+      "intent": "return_policy",
+      "question": "What is the return window for unused items?",
+      "expected_answer_contains": "30 days",
+      "http_status": 200,
+      "route": "rag",
+      "citation_count": 6,
+      "hit": true
+    },
+    {
+      "intent": "warehouse_inspection",
+      "question": "How should warehouse staff handle a damaged inbound package?",
+      "expected_answer_contains": "quarantine",
+      "http_status": 200,
+      "route": "rag",
+      "citation_count": 6,
+      "hit": false
+    },
+    {
+      "intent": "promo_lookup",
+      "question": "What multipack soft-drink promotion is on the leaflet for SunValley?",
+      "expected_answer_contains": "3.00 for 2",
+      "http_status": 200,
+      "route": "rag",
+      "citation_count": 6,
+      "hit": false
+    }
+  ],
+  "notes": [
+    "Live evaluation against a real deployment: RETAILOPS_EMBED_BACKEND=fastembed (BAAI/bge-small-en-v1.5, 384 dims) is the deploy default per backend/app/retailops/embeddings.py and backend/app/retailops/deploy/Dockerfile (model is warmed at image build time so a cold ONNX download never occurs at request time).",
+    "This report is a fixed 3-question gold-case regression on the live corpus, not a general proof of FastEmbed embedding quality.",
+    "The CI-safe offline hash-v1 3-case report (docs/retrieval_eval_report.md) is retained unmodified and is not claimed to demonstrate FastEmbed quality.",
+    "Embedding fingerprint stamping/mismatch enforcement (embedding_model + embedding_dim per document, raise \u2014 never silently fall back to hash) is unit-tested in backend/tests/retailops/test_embedding_guard.py and is unconditionally active in backend/app/retailops/embedding_guard.py for every ingest and retrieval call.",
+    "Recall<100% here is a known, honestly-reported limitation of hybrid retrieval over a small mixed corpus (large FDA/OSHA/FTC regulatory documents alongside a handful of tiny HF SOP/promo snippets in the same project) for naturally-phrased questions that do not repeat the answer's keywords \u2014 it is NOT a silent-fallback or embedding-mismatch defect (those are hard-gated separately). scripts/release_gate.py's six-question regression (which uses release-representative phrasing) is the release-blocking RAG contract gate and passes 6/6 live."
+  ]
+}

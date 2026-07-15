@@ -53,7 +53,7 @@
     }
   ],
   "allowed_paths": [
-    "fixtures/northstar/*/inventory.*"
+    "fixtures/demo/*/inventory.*"
   ],
   "allowed_actions": [
     "retail.analyse_inventory_risk",
@@ -189,7 +189,7 @@
         "id": "inventory.source_of_truth",
         "name": "POS/inventory rows are authoritative",
         "kind": "kpi",
-        "ref": "fixtures/northstar/*/inventory.*",
+        "ref": "fixtures/demo/*/inventory.*",
         "must_cite": true,
         "description": "Learning profiles never silently overwrite source system stock figures."
       },
