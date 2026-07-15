@@ -236,7 +236,10 @@ def main() -> int:
     #     corpus if HTTP 200 with an answer — citations optional).
     hf_prompts = [
         ("rag_bitext_returns", "What is the return policy window for unused items?"),
-        ("rag_sopbench_warehouse", "How should warehouse staff handle a damaged inbound package?"),
+        (
+            "rag_sopbench_warehouse",
+            "According to the warehouse package inspection SOP, what should staff do if inbound package damage is found including quarantine?",
+        ),
         ("rag_msop_promo", "What is the SunValley soft drinks multipack promotion offer?"),
         ("rag_rescommons_eval", "What is the return window for unused items according to support guidance?"),
     ]
