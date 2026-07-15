@@ -1,8 +1,9 @@
 """Embedding providers for RetailOps.
 
-Tests default to a deterministic feature-hash embedder. The live pilot path
-uses ``RETAILOPS_EMBED_BACKEND=fastembed`` (ONNX BGE-small) for real semantic
-vectors. Both target ``EMBED_DIM`` (384) so pgvector columns stay stable.
+Default / deploy path: ``RETAILOPS_EMBED_BACKEND=fastembed`` (ONNX
+``BAAI/bge-small-en-v1.5``, 384 dims). Tests force ``hash`` via conftest for a
+deterministic no-ML embedder. Both target ``EMBED_DIM`` (384) so pgvector
+columns stay stable — do not invent Azure embeddings as the default.
 """
 
 from __future__ import annotations
@@ -116,13 +117,20 @@ def get_embedder(config: Optional[RetailOpsConfig] = None) -> EmbeddingProvider:
     if _provider is not None:
         return _provider
     config = config or get_config()
-    backend = (config.embed_backend or "hash").lower()
+    # Default is fastembed (BGE-small ONNX). Use hash only in unit tests via
+    # RETAILOPS_EMBED_BACKEND=hash (see tests/retailops/conftest.py).
+    backend = (config.embed_backend or "fastembed").lower()
     if backend in ("fastembed", "bge", "real"):
         # Do not silently fall back to hash when BGE was explicitly requested —
         # pack ingest must record real semantic vectors or fail loudly.
         _provider = FastEmbedProvider(config.embed_dim)
-    else:
+    elif backend == "hash":
         _provider = HashEmbeddingProvider(config.embed_dim)
+    else:
+        raise ValueError(
+            f"Unknown RETAILOPS_EMBED_BACKEND={backend!r}; "
+            "use 'fastembed' (default) or 'hash' (tests only)"
+        )
     return _provider
 
 

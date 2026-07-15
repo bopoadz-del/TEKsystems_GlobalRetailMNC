@@ -1,6 +1,7 @@
-# Lean runtime dependencies for the generated RetailOps container.
-# The default embedding backend is deterministic (no ML deps). Set
-# RETAILOPS_EMBED_BACKEND=fastembed and add fastembed to use ONNX embeddings.
+# Lean runtime dependencies. Mirrors backend/app/retailops/deploy/requirements.txt
+# (the actual Docker/Render source of truth). Live embeddings default to
+# RETAILOPS_EMBED_BACKEND=fastembed (BGE-small ONNX); RETAILOPS_EMBED_BACKEND=hash
+# is a deterministic fallback used only by unit tests (no ML deps needed there).
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 pydantic>=2.9.0
@@ -14,10 +15,14 @@ psycopg[binary]>=3.1.18
 pgvector>=0.2.5
 alembic>=1.13.0
 
+# Real semantic embeddings (pilot / production default)
+fastembed>=0.4.0
+
 # Orchestration
 langgraph>=0.2.0
 
-# Ingestion parsers
+# Ingestion parsers + FreshRetailNet/HF pack parquet
 pypdf>=5.0.0
 python-docx>=1.1.0
 openpyxl>=3.1.0
+pyarrow>=15.0.0

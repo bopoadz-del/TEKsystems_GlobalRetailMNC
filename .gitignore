@@ -9,3 +9,5 @@ node_modules/
 dist/
 *.tsbuildinfo
 .DS_Store
+.venv-ingest/
+_ingest_check.py

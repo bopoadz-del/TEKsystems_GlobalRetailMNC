@@ -18,7 +18,8 @@ Governed open retail content release for TEKsystems RetailOps.
 
 ```bash
 cd backend
-export RETAILOPS_EMBED_BACKEND=hash   # or fastembed for real vectors
+# RETAILOPS_EMBED_BACKEND defaults to fastembed (real ONNX BGE-small vectors);
+# set to hash only for deterministic, no-ML-deps unit tests.
 # Offline / CI
 PYTHONPATH=. python -m app.retailops.packs.load_retail_core_open_v1 --profile mini
 # Full: HTTPS acquire FDA/OSHA/FTC + FreshRetailNet parquet + UCI zip, then embed
