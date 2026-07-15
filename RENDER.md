@@ -94,3 +94,22 @@ python -m app.retailops.packs.load_retail_core_open_v1 --profile mini
 ```
 
 Inspect: `GET /v1/packs/retail_core_open_v1`
+
+## Hugging Face retail RAG packs
+
+Four additional packs (Bitext CX, SOPBench SOPs, mSOP promo leaflets, rescommons
+group-B eval) ingest into the same `platform` / `prj_prebuilt_retail_core`
+corpus. Mini fixtures are committed; `full` downloads from Hugging Face.
+
+```bash
+# Offline / CI
+python -m app.retailops.packs.load_hf_retail_packs --pack all --profile mini --force
+
+# Network sample from HF (needs pyarrow for parquet packs)
+python -m app.retailops.packs.load_hf_retail_packs --pack all --profile full --force
+```
+
+Inspect: `GET /v1/packs/hf_retail`
+
+Oracle also runs pack-specific `/v1/ask` prompts when these packs are loaded
+(see `scripts/oracle_smoke.py`).

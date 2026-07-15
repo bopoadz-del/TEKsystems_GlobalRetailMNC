@@ -232,6 +232,32 @@ def main() -> int:
         f"citations={len(citations)}",
     )
 
+    # 5b. HF pack RAG prompts (pass when packs loaded; still pass soft on empty
+    #     corpus if HTTP 200 with an answer — citations optional).
+    hf_prompts = [
+        ("rag_bitext_returns", "What is the return policy window for unused items?"),
+        ("rag_sopbench_warehouse", "How should warehouse staff handle a damaged inbound package?"),
+        ("rag_msop_promo", "What is the SunValley soft drinks multipack promotion offer?"),
+        ("rag_rescommons_eval", "What is the return window for unused items according to support guidance?"),
+    ]
+    for case_name, question in hf_prompts:
+        status, body = http(
+            args.base_url,
+            "POST",
+            "/v1/ask",
+            headers,
+            {"question": question},
+            timeout=60.0,
+        )
+        citations = body.get("citations", []) if isinstance(body, dict) else []
+        answer = (body.get("answer") or "") if isinstance(body, dict) else ""
+        ok = status == 200 and bool(answer)
+        record(
+            case_name,
+            ok,
+            f"HTTP {status} citations={len(citations)} answer_len={len(answer)}",
+        )
+
     # 6. Audit persistence: the six execute calls above should be visible.
     status, body = http(args.base_url, "GET", "/v1/audit", headers)
     runs = body.get("runs", []) if isinstance(body, dict) else []

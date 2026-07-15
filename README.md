@@ -208,6 +208,25 @@ curl -s $H localhost:8000/v1/audit
 *Australia Region* and *Global Region* (no retailer brand names). Open knowledge
 lives in the `retail_core_open_v1` platform-prebuilt release.
 
+### Hugging Face RAG packs
+
+Additional general / multi-brand corpora (not H&M or Amazon product catalogues):
+
+| Pack | Hub | Role |
+|------|-----|------|
+| `retail_cx_policies_v1` | Bitext retail chatbot | General CX/policy RAG |
+| `retail_ops_sops_v1` | amazon/sop-bench | Ops SOP procedure texts |
+| `promo_leaflet_rag_v1` | mSOP-765k | Multi-brand flyer offers (text; images deferred) |
+| `retail_ecom_rag_eval_v1` | rescommons (group B) | RAG eval gold + selective snippets |
+
+```bash
+cd backend
+PYTHONPATH=. python -m app.retailops.packs.load_hf_retail_packs --pack all --profile mini --force
+# GET /v1/packs/hf_retail
+```
+
+See [RENDER.md](RENDER.md) for full HF load on Render and [LICENSES.md](backend/app/retailops/packs/retail_cx_policies_v1/LICENSES.md) per pack.
+
 ## Security
 
 Trusted tenant/project/permissions are server-resolved. Retrieval is fail-closed
