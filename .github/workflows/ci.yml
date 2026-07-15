@@ -189,12 +189,20 @@ jobs:
           curl -sf http://127.0.0.1:8000/health
       - name: API key gate is enforced inside the container
         run: |
-          # No key -> denied (health stays public, /v1/* is gated).
+          # This checks the ApiKeyMiddleware shared-secret gate in isolation,
+          # not full request authorisation — the fresh container has an empty,
+          # migrated-only DB (no fixtures loaded), so "u"/"t"/"p" is not a real
+          # principal and correctly fails deeper auth (403) once past the gate.
+          # No key -> denied by the gate itself (health stays public).
           code=$(curl -s -o /dev/null -w '%{http_code}' -H 'X-User-Id: u' -H 'X-Tenant-Id: t' -H 'X-Project-Id: p' http://127.0.0.1:8000/v1/actions)
           test "$code" = "401"
-          # Correct key -> allowed.
+          # Wrong key -> still denied by the gate itself.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'X-API-Key: wrong-key' -H 'X-User-Id: u' -H 'X-Tenant-Id: t' -H 'X-Project-Id: p' http://127.0.0.1:8000/v1/actions)
+          test "$code" = "401"
+          # Correct key -> passes the gate (never 401 again); deeper auth then
+          # legitimately 403s the unknown/unseeded principal in defense-in-depth.
           code=$(curl -s -o /dev/null -w '%{http_code}' -H 'X-API-Key: ci-docker-e2e-key' -H 'X-User-Id: u' -H 'X-Tenant-Id: t' -H 'X-Project-Id: p' http://127.0.0.1:8000/v1/actions)
-          test "$code" = "200"
+          test "$code" = "403"
       - name: Container logs (always, for diagnostics)
         if: always()
         run: docker logs retailops-ci || true
