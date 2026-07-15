@@ -33,8 +33,14 @@ jobs:
         env:
           RETAILOPS_EMBED_BACKEND: hash
           RETAILOPS_SKIP_MIGRATIONS: "1"
+          # GitHub Actions sets CI=true for every job by default; conftest.py
+          # treats CI=true as "a missing DB must fail, never skip" (by design,
+          # for the db-integration job below). This job intentionally has no
+          # Postgres service container, so override it back to false here —
+          # db-integration is the job that gates real DB behaviour.
+          CI: "false"
         run: |
-          PYTHONPATH=. pytest -q \
+          PYTHONPATH=. pytest -q -k "not route" \
             tests/retailops/test_embedding_guard.py \
             tests/retailops/test_auth_cors.py \
             tests/retailops/test_discipline_agents.py \
@@ -140,20 +146,38 @@ jobs:
   docker-build:
     name: Docker build + health
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: retailops
+          POSTGRES_PASSWORD: retailops
+          POSTGRES_DB: retailops_docker_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U retailops -d retailops_docker_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
+      - name: Enable pgvector extension
+        run: |
+          docker run --rm --network host -e PGPASSWORD=retailops postgres:16-alpine \
+            psql -h 127.0.0.1 -U retailops -d retailops_docker_ci -c "CREATE EXTENSION IF NOT EXISTS vector"
       - name: Build image
         run: docker build -f backend/app/retailops/deploy/Dockerfile -t retailops:ci .
-      - name: Run container (fake LLM, API key gate on, hash embeddings for speed)
+      - name: Run container (fake LLM, API key gate on, real Postgres, mandatory startup migrations)
         run: |
-          docker run -d --name retailops-ci -p 8000:8000 \
+          docker run -d --name retailops-ci --network host \
             -e RETAILOPS_LLM_PROVIDER=fake \
             -e RETAILOPS_EMBED_BACKEND=hash \
             -e RETAILOPS_API_KEY=ci-docker-e2e-key \
             -e RETAILOPS_CORS_ORIGINS=https://ci.example.com \
             -e RETAILOPS_ENV=production \
-            -e RETAILOPS_DATABASE_URL=sqlite+pysqlite:///:memory: \
-            -e RETAILOPS_SKIP_MIGRATIONS=1 \
+            -e RETAILOPS_DATABASE_URL=postgresql+psycopg://retailops:retailops@127.0.0.1:5432/retailops_docker_ci \
+            -e PORT=8000 \
             retailops:ci
       - name: Wait for /health
         run: |
