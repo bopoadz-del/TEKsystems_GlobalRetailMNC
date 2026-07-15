@@ -129,6 +129,11 @@ def create_app() -> FastAPI:
                 conn.execute(text("SELECT 1"))
         except Exception:  # noqa: BLE001
             db_ok = False
+        # Deploy-evidence only (release certification DoD): Render sets
+        # RENDER_GIT_COMMIT automatically for every service deploy; an
+        # explicit RETAILOPS_RELEASE_COMMIT override is honoured first for
+        # non-Render environments (e.g. Docker E2E in CI). Never fabricated.
+        commit_sha = os.getenv("RETAILOPS_RELEASE_COMMIT") or os.getenv("RENDER_GIT_COMMIT")
         return {
             "status": "ok" if db_ok else "degraded",
             "version": RETAILOPS_VERSION,
@@ -136,6 +141,7 @@ def create_app() -> FastAPI:
             # Legacy key retained for existing clients / Render smoke scripts.
             "blocks_commit": BLOCKS_COMMIT,
             "database": "ok" if db_ok else "unavailable",
+            "commit_sha": commit_sha,
         }
 
     app.include_router(api_router)

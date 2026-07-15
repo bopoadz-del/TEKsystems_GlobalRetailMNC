@@ -10,4 +10,5 @@ dist/
 *.tsbuildinfo
 .DS_Store
 .venv-ingest/
+.venv_ci/
 _ingest_check.py

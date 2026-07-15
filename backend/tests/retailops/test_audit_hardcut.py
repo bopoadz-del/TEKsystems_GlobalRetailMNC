@@ -182,3 +182,15 @@ def test_no_dangling_packs_paths():
     for path in root.glob("*.json"):
         raw = path.read_text()
         assert "packs/retail_core_open_v1" not in raw, path.name
+
+
+def test_no_dangling_northstar_fixture_paths():
+    """Regression guard: fixtures/northstar/** was renamed to fixtures/demo/**
+    (Australia/Global regions); manifest allowed_paths/playbook refs must
+    track the rename, never the pre-rename directory."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2] / "app" / "retailops" / "agents" / "manifests"
+    for path in root.glob("*.json"):
+        raw = path.read_text()
+        assert "northstar" not in raw, path.name

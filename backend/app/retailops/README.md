@@ -272,8 +272,8 @@ python scripts/oracle_smoke.py --base-url https://retailops-3ayp.onrender.com \
 See [RENDER.md](RENDER.md) for the full deploy/env/smoke-test guide. Blueprint:
 root `render.yaml` (same Dockerfile as local).
 
-Live: https://retailops-3ayp.onrender.com — this service auto-deploys from
-`feat/retailops-platform-v1`.
+Live: https://retailops-3ayp.onrender.com — as of the RetailOps v1 release
+certification this service auto-deploys from `main`.
 
 ## API examples
 

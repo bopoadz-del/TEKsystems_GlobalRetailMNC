@@ -59,7 +59,7 @@ def test_compose_base_plus_roster_hat():
     composed = catalog.compose("retail.hat.workforce_roster")
     assert composed["agent_id"] == "retail.hat.workforce_roster"
     assert composed["composed_from"] == ["retail.base", "retail.hat.workforce_roster"]
-    assert "fixtures/northstar/**" in composed["allowed_paths"]
+    assert "fixtures/demo/**" in composed["allowed_paths"]
     assert any(s.get("key") == "confirmed_coverage_rule" for s in composed["memory"]["save"])
     assert composed["activation"]["default_enabled"] is True
 
