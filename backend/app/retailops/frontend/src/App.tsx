@@ -12,6 +12,23 @@ type ChatMessage = { role: "assistant" | "user"; text: string; citations?: Citat
 // Global Region under tenant "retail") also work once loaded, but their project ids
 // are generated per-deployment; paste one into Project ID below instead.
 const INITIAL_PRINCIPAL: Principal = { userId: "u_platform", tenantId: "platform", projectId: "prj_prebuilt_retail_core" };
+// Browsers that signed in before the defaults above were fixed still have the old,
+// never-valid identity cached in localStorage (see git history: it used to default to
+// tenant "northstar" / user "u_ops_manager"). Without this migration those sessions would
+// keep replaying a principal that 403s forever, even after the app itself is redeployed.
+const STALE_PRINCIPALS: Partial<Principal>[] = [{ userId: "u_ops_manager", tenantId: "northstar" }];
+const DEFAULTS_MIGRATION_KEY = "retailops.defaultsMigration";
+const DEFAULTS_MIGRATION_VERSION = "2024-07-platform-default";
+
+function loadStoredPrincipal(): Principal {
+  let stored: Principal | null = null;
+  try { stored = JSON.parse(localStorage.getItem("retailops.principal") || "null"); } catch { stored = null; }
+  if (!stored || !stored.userId || !stored.tenantId || !stored.projectId) return INITIAL_PRINCIPAL;
+  const alreadyMigrated = localStorage.getItem(DEFAULTS_MIGRATION_KEY) === DEFAULTS_MIGRATION_VERSION;
+  const isKnownStale = STALE_PRINCIPALS.some(s => s.userId === stored!.userId && s.tenantId === stored!.tenantId);
+  if (isKnownStale && !alreadyMigrated) return INITIAL_PRINCIPAL;
+  return stored;
+}
 const Icon = ({ children }: { children: ReactNode }) => <span className="icon" aria-hidden>{children}</span>;
 
 function download(filename: string, type: string, content: string) {
@@ -30,10 +47,13 @@ function MiniBars() {
 }
 
 export function App() {
-  const [principal, setPrincipal] = useState<Principal>(() => {
-    try { return JSON.parse(localStorage.getItem("retailops.principal") || "null") || INITIAL_PRINCIPAL; } catch { return INITIAL_PRINCIPAL; }
-  });
+  const [principal, setPrincipal] = useState<Principal>(loadStoredPrincipal);
   const [signedIn, setSignedIn] = useState(() => Boolean(localStorage.getItem("retailops.signedIn")));
+  useEffect(() => {
+    localStorage.setItem(DEFAULTS_MIGRATION_KEY, DEFAULTS_MIGRATION_VERSION);
+    localStorage.setItem("retailops.principal", JSON.stringify(principal));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [view, setView] = useState<View>("command");
   const [leftOpen, setLeftOpen] = useState(true); const [rightOpen, setRightOpen] = useState(true);
   const [settings, setSettings] = useState(false); const [profileOpen, setProfileOpen] = useState(false);

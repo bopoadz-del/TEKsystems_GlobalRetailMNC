@@ -57,6 +57,10 @@ Copy a returned project id into the UI (header / Overview paste).
 4. After fixtures: cited `/v1/ask`, three retail actions, audit list  
 5. Australia project cannot retrieve Global-only supplier evidence  
 
+Run `python scripts/oracle_smoke.py --base-url https://retailops-3ayp.onrender.com` to check 1-4
+automatically (health, root, actions discovery, the kit's own deterministic
+`evaluation_fixtures`, a RAG `/v1/ask` smoke, and audit persistence) against a live deploy.
+
 ## Two-minute demo
 
 1. Open https://retailops-3ayp.onrender.com/  
