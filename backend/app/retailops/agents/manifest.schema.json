@@ -1,0 +1,286 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebrumdev.ai/schemas/retailops-discipline-agent-manifest.v1.json",
+  "title": "RetailOps Discipline Agent Manifest",
+  "description": "Vendor-neutral base-agent + discipline-hat contract for TEKsystems RetailOps / CerebrumDev.ai catalog.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_version",
+    "agent_id",
+    "kind",
+    "display_name",
+    "discipline",
+    "activation",
+    "context_sources",
+    "handoffs",
+    "verification",
+    "failure_policy",
+    "memory",
+    "playbook"
+  ],
+  "properties": {
+    "manifest_version": { "type": "string", "const": "1.0.0" },
+    "agent_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+      "description": "Namespaced id, e.g. retail.base or retail.hat.accounting"
+    },
+    "kind": { "type": "string", "enum": ["base", "hat"] },
+    "display_name": { "type": "string", "minLength": 1 },
+    "discipline": {
+      "type": "string",
+      "enum": [
+        "base",
+        "inventory",
+        "accounting",
+        "marketing",
+        "hr",
+        "workforce_roster",
+        "supplier",
+        "compliance",
+        "store_operations",
+        "customer_experience",
+        "reporting"
+      ]
+    },
+    "extends": {
+      "type": ["string", "null"],
+      "description": "For hats: base agent_id this hat sits on"
+    },
+    "summary": { "type": "string" },
+    "activation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "default_enabled", "triggers", "put_off_by"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["manual", "auto", "hybrid"] },
+        "default_enabled": { "type": "boolean" },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "value"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["intent", "keyword", "action_id", "user_toggle"]
+              },
+              "value": { "type": "string" }
+            }
+          }
+        },
+        "put_off_by": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "User/system signals that disable this hat for the turn"
+        }
+      }
+    },
+    "context_sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_id", "kind"],
+        "properties": {
+          "source_id": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "project_documents",
+              "learning_profiles",
+              "structured_tables",
+              "official_guidance",
+              "fixtures",
+              "memory"
+            ]
+          },
+          "doc_roles": { "type": "array", "items": { "type": "string" } },
+          "modules": { "type": "array", "items": { "type": "string" } },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "allowed_paths": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Relative knowledge/fixture path globs the agent may read"
+    },
+    "allowed_actions": {
+      "type": "array",
+        "items": { "type": "string" },
+      "description": "Registered ActionRegistry ids this hat may recommend"
+    },
+    "handoffs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["to_agent_id", "when"],
+        "properties": {
+          "to_agent_id": { "type": "string" },
+          "when": { "type": "string" },
+          "carry": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Evidence/context keys to carry across the handoff"
+          },
+          "requires_confirmation": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["save", "scope"],
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": ["tenant_project", "tenant", "user_project"]
+        },
+        "save": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "description", "requires_confirmation"],
+            "properties": {
+              "key": { "type": "string" },
+              "description": { "type": "string" },
+              "requires_confirmation": { "type": "boolean" }
+            }
+          }
+        },
+        "never_persist": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grounding", "cite_required", "refuse_unaided_figures"],
+      "properties": {
+        "grounding": {
+          "type": "string",
+          "enum": ["documents_or_learning_only", "documents_only", "structured_only"]
+        },
+        "cite_required": { "type": "boolean" },
+        "refuse_unaided_figures": { "type": "boolean" },
+        "checks": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "failure_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["on_missing_context", "on_unregistered_action", "on_low_confidence"],
+      "properties": {
+        "on_missing_context": {
+          "type": "string",
+          "enum": ["dependency_required", "unsupported", "ask_clarifying"]
+        },
+        "on_unregistered_action": {
+          "type": "string",
+          "enum": ["unsupported", "handoff"]
+        },
+        "on_low_confidence": {
+          "type": "string",
+          "enum": ["disclose_only", "block", "handoff"]
+        }
+      }
+    },
+    "playbook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["formulas", "standards", "procedures"],
+      "description": "Discipline formulas, standards, and operating procedures owned by this agent/hat.",
+      "properties": {
+        "formulas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "expression"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 },
+              "expression": { "type": "string", "minLength": 1 },
+              "inputs": { "type": "array", "items": { "type": "string" } },
+              "outputs": { "type": "array", "items": { "type": "string" } },
+              "implemented_by": {
+                "type": ["string", "null"],
+                "description": "Action id, learning module id, or null when advisory-only"
+              },
+              "unit": { "type": ["string", "null"] },
+              "notes": { "type": "string" }
+            }
+          }
+        },
+        "standards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "kind"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "kind": {
+                "type": "string",
+                "enum": ["policy", "regulatory", "internal", "kpi", "safety"]
+              },
+              "ref": { "type": "string" },
+              "must_cite": { "type": "boolean", "default": true },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "procedures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "steps"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "trigger": { "type": "string" },
+              "handoff_to": { "type": ["string", "null"] },
+              "requires_confirmation": { "type": "boolean", "default": false },
+              "steps": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["step", "action"],
+                  "properties": {
+                    "step": { "type": "integer", "minimum": 1 },
+                    "action": { "type": "string", "minLength": 1 },
+                    "requires_confirmation": { "type": "boolean", "default": false }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "permissions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vendor_neutral": { "type": "boolean" },
+        "product": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

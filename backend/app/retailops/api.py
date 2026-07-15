@@ -5,6 +5,11 @@ Endpoints:
     GET  /v1/actions/{action_id}
     POST /v1/actions/{action_id}/execute
     POST /v1/ask                      (LangGraph orchestration)
+    GET  /v1/agents                   (discipline base + hats catalog)
+    GET  /v1/agents/{agent_id}
+    GET  /v1/agents/memory
+    POST /v1/agents/memory
+    POST /v1/exports                  (stream PDF/DOCX/XLSX download)
     POST /v1/documents                (ingest)
     GET  /v1/documents
     GET  /v1/audit
@@ -81,6 +86,7 @@ class ExecuteRequest(BaseModel):
 
 class AskRequest(BaseModel):
     question: str
+    disabled_agents: List[str] = Field(default_factory=list)
 
 
 class IngestRequest(BaseModel):
@@ -158,7 +164,10 @@ async def ask(
     context: ActionContext = Depends(get_context),
 ) -> Dict[str, Any]:
     outcome = await run_orchestrator(
-        session=session, context=context, question=body.question
+        session=session,
+        context=context,
+        question=body.question,
+        disabled_agents=body.disabled_agents,
     )
     session.commit()
     result = outcome.get("action_result")
@@ -168,7 +177,211 @@ async def ask(
         "answer": outcome["answer"],
         "citations": outcome.get("citations", []),
         "action_result": result.to_dict() if result is not None else None,
+        "execution_plan": outcome.get("execution_plan"),
     }
+
+
+# ---------------------------------------------------------------------------
+# Discipline agents (base + hats) — catalog, not a second orchestrator
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/agents")
+def list_agents(
+    composed: bool = True,
+    context: ActionContext = Depends(get_context),
+) -> Dict[str, Any]:
+    if not context.has_permission("retail:read"):
+        raise HTTPException(status_code=403, detail="missing retail:read")
+    from app.retailops.agents import get_agent_catalog
+
+    catalog = get_agent_catalog()
+    bases = [m.to_dict() for m in catalog.bases()]
+    if composed:
+        hats = [catalog.compose(h.agent_id) for h in catalog.hats()]
+    else:
+        hats = [h.to_dict() for h in catalog.hats()]
+    return {
+        "vendor_neutral": True,
+        "catalog_product": "TEKsystems RetailOps",
+        "base_count": len(bases),
+        "hat_count": len(hats),
+        "bases": bases,
+        "hats": hats,
+    }
+
+
+
+class MemorySaveRequest(BaseModel):
+    agent_id: str
+    key: str
+    value: Dict[str, Any] = Field(default_factory=dict)
+    confirm: bool = False
+
+
+@router.get("/v1/agents/memory")
+def list_agent_memory(
+    agent_id: Optional[str] = None,
+    key: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    session: Session = Depends(get_session),
+    context: ActionContext = Depends(get_context),
+) -> Dict[str, Any]:
+    if not context.has_permission("retail:read"):
+        raise HTTPException(status_code=403, detail="missing retail:read")
+    from app.retailops.agents.memory import list_memory, memory_to_dict
+
+    rows = list_memory(
+        session,
+        tenant_id=context.tenant_id,
+        project_id=context.project_id,
+        agent_id=agent_id,
+        key=key,
+        limit=limit,
+        offset=offset,
+    )
+    return {
+        "advisory_only": True,
+        "count": len(rows),
+        "entries": [memory_to_dict(r) for r in rows],
+    }
+
+
+@router.post("/v1/agents/memory")
+def save_agent_memory(
+    body: MemorySaveRequest,
+    session: Session = Depends(get_session),
+    context: ActionContext = Depends(get_context),
+) -> Dict[str, Any]:
+    if not context.has_permission("retail:analyse"):
+        raise HTTPException(status_code=403, detail="missing retail:analyse")
+    from app.retailops.agents.memory import AgentMemoryError, memory_to_dict, save_memory
+
+    try:
+        row = save_memory(
+            session,
+            tenant_id=context.tenant_id,
+            project_id=context.project_id,
+            user_id=context.user_id,
+            agent_id=body.agent_id,
+            key=body.key,
+            value=body.value,
+            confirmed=body.confirm,
+        )
+    except AgentMemoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    session.commit()
+    return {"status": "saved", "entry": memory_to_dict(row), "advisory_only": True}
+
+
+@router.get("/v1/agents/{agent_id}")
+def get_agent(
+    agent_id: str,
+    composed: bool = True,
+    context: ActionContext = Depends(get_context),
+) -> Dict[str, Any]:
+    if not context.has_permission("retail:read"):
+        raise HTTPException(status_code=403, detail="missing retail:read")
+    from app.retailops.agents import get_agent_catalog
+    from app.retailops.agents.catalog import AgentCatalogError
+
+    catalog = get_agent_catalog()
+    manifest = catalog.get(agent_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent '{agent_id}'")
+    if manifest.kind == "hat" and composed:
+        try:
+            return catalog.compose(agent_id)
+        except AgentCatalogError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return manifest.to_dict()
+
+
+# ---------------------------------------------------------------------------
+# Document exports (PDF / DOCX / XLSX)
+# ---------------------------------------------------------------------------
+
+class ExportRequest(BaseModel):
+    format: str = Field(..., description="pdf | docx | xlsx")
+    document_kind: str = Field(
+        "custom",
+        description="custom | operations_brief | inventory_risk | learning_summary",
+    )
+    title: Optional[str] = None
+    subtitle: Optional[str] = None
+    source_output: Optional[Dict[str, Any]] = None
+    sections: Optional[List[Dict[str, Any]]] = None
+    table: Optional[Dict[str, Any]] = None
+    tables: Optional[List[Dict[str, Any]]] = None
+    period: Optional[str] = "daily"
+    store: Optional[str] = None
+    module: Optional[str] = None
+    profiles: Optional[List[Dict[str, Any]]] = None
+    auto_context: bool = True
+
+
+@router.post("/v1/exports")
+async def export_file(
+    body: ExportRequest,
+    session: Session = Depends(get_session),
+    context: ActionContext = Depends(get_context),
+):
+    """Generate and stream a PDF/DOCX/XLSX download."""
+    import base64
+
+    from fastapi.responses import Response
+
+    registry = service.build_registry()
+    spec = registry.resolve("retail.export_document")
+    if spec is None:
+        raise HTTPException(status_code=404, detail="export action not registered")
+
+    arguments: Dict[str, Any] = {
+        "format": body.format,
+        "document_kind": body.document_kind,
+        "include_base64": True,
+    }
+    for key in (
+        "title",
+        "subtitle",
+        "source_output",
+        "sections",
+        "table",
+        "tables",
+        "period",
+        "store",
+        "module",
+        "profiles",
+    ):
+        value = getattr(body, key)
+        if value is not None:
+            arguments[key] = value
+
+    if body.auto_context:
+        arguments = service.enrich_arguments(session, spec, context, arguments)
+    result = await service.execute_and_audit(
+        session, spec, context, arguments, confirmed=False
+    )
+    session.commit()
+    if result.status != ActionStatus.SUCCESS:
+        raise HTTPException(status_code=400, detail=result.to_dict())
+
+    payload = result.output or {}
+    raw_b64 = payload.get("document_base64")
+    if not raw_b64:
+        raise HTTPException(status_code=500, detail="export produced no document bytes")
+    data = base64.b64decode(raw_b64)
+    filename = str(payload.get("filename") or f"export.{body.format}")
+    content_type = str(payload.get("content_type") or "application/octet-stream")
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Export-Sha256": str(payload.get("sha256") or ""),
+            "X-Export-Request-Id": result.request_id,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -392,4 +605,64 @@ def hf_retail_packs_status(session: Session = Depends(get_session)) -> Dict[str,
                 "loaded_sources": by_release.get(EVAL_ID, []),
             },
         ]
+    }
+
+
+@router.get("/v1/learning/summary")
+def learning_summary(
+    module: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    session: Session = Depends(get_session),
+    context: ActionContext = Depends(get_context),
+) -> Dict[str, Any]:
+    if not context.has_permission("retail:read"):
+        raise HTTPException(status_code=403, detail="missing retail:read")
+    from app.retailops.learning import RetailOutcomeLearningEngine, profile_to_dict
+
+    engine = RetailOutcomeLearningEngine()
+    profiles = engine.list_profiles(
+        session,
+        tenant_id=context.tenant_id,
+        project_id=context.project_id,
+        module=module,
+        limit=limit,
+        offset=offset,
+    )
+    return {
+        "advisory_only": True,
+        "count": len(profiles),
+        "profiles": [profile_to_dict(p) for p in profiles],
+    }
+
+
+@router.get("/v1/learning/profiles")
+def learning_profiles(
+    module: Optional[str] = None,
+    entity_type: Optional[str] = None,
+    entity_key: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    session: Session = Depends(get_session),
+    context: ActionContext = Depends(get_context),
+) -> Dict[str, Any]:
+    if not context.has_permission("retail:read"):
+        raise HTTPException(status_code=403, detail="missing retail:read")
+    from app.retailops.learning import RetailOutcomeLearningEngine, profile_to_dict
+
+    engine = RetailOutcomeLearningEngine()
+    profiles = engine.list_profiles(
+        session,
+        tenant_id=context.tenant_id,
+        project_id=context.project_id,
+        module=module,
+        entity_type=entity_type,
+        entity_key=entity_key,
+        limit=limit,
+        offset=offset,
+    )
+    return {
+        "advisory_only": True,
+        "count": len(profiles),
+        "profiles": [profile_to_dict(p) for p in profiles],
     }

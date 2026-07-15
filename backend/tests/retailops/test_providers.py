@@ -29,11 +29,27 @@ def test_azure_provider_config_detection(monkeypatch):
 def test_get_provider_defaults_to_fake_without_credentials(monkeypatch):
     for var in [
         "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_DEPLOYMENT",
-        "OPENAI_API_KEY", "RETAILOPS_LLM_API_KEY",
+        "OPENAI_API_KEY", "RETAILOPS_LLM_API_KEY", "OLLAMA_API_KEY",
+        "OPENAI_BASE_URL", "RETAILOPS_LLM_BASE_URL",
     ]:
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("RETAILOPS_LLM_PROVIDER", "auto")
     assert isinstance(get_provider(), FakeProvider)
+
+
+def test_ollama_provider_selected(monkeypatch):
+    for var in [
+        "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_DEPLOYMENT",
+        "OPENAI_API_KEY", "RETAILOPS_LLM_API_KEY",
+        "OPENAI_BASE_URL", "RETAILOPS_LLM_BASE_URL", "RETAILOPS_LLM_MODEL",
+    ]:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("OLLAMA_API_KEY", "test-key")
+    monkeypatch.setenv("RETAILOPS_LLM_PROVIDER", "ollama")
+    p = get_provider()
+    assert p.name == "ollama_cloud"
+    assert p.base_url == "https://ollama.com/v1"
+    assert p.model == "ministral-3:8b"
 
 
 def test_azure_selected_but_unconfigured_raises(monkeypatch):

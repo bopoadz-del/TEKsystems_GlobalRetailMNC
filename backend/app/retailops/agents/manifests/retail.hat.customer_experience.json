@@ -1,0 +1,209 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.customer_experience",
+  "kind": "hat",
+  "display_name": "Customer Experience Hat",
+  "discipline": "customer_experience",
+  "extends": "retail.base",
+  "summary": "Service quality, queue/complaint themes, and shopper-journey guidance without inventing guest PII.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      {
+        "type": "intent",
+        "value": "customer_experience"
+      },
+      {
+        "type": "keyword",
+        "value": "customer complaint"
+      },
+      {
+        "type": "keyword",
+        "value": "nps"
+      },
+      {
+        "type": "keyword",
+        "value": "queue"
+      },
+      {
+        "type": "keyword",
+        "value": "checkout wait"
+      },
+      {
+        "type": "keyword",
+        "value": "service level"
+      }
+    ],
+    "put_off_by": [
+      "disable:cx",
+      "disable:retail.hat.customer_experience"
+    ]
+  },
+  "context_sources": [
+    {
+      "source_id": "cx_docs",
+      "kind": "project_documents",
+      "doc_roles": [
+        "document",
+        "incident"
+      ],
+      "description": "Service and complaint-related project documents"
+    }
+  ],
+  "allowed_paths": [
+    "fixtures/northstar/**"
+  ],
+  "allowed_actions": [
+    "retail.generate_operations_brief"
+  ],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.workforce_roster",
+      "when": "service failures map to coverage gaps",
+      "carry": [
+        "store",
+        "role",
+        "shift_window"
+      ],
+      "requires_confirmation": true
+    },
+    {
+      "to_agent_id": "retail.hat.marketing",
+      "when": "experience themes affect campaign promises",
+      "carry": [
+        "theme",
+        "store"
+      ],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.store_operations",
+      "when": "floor conditions or incidents affect guests",
+      "carry": [
+        "store",
+        "topic"
+      ],
+      "requires_confirmation": false
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [],
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "guest_pii",
+      "unverified_claims"
+    ]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": [
+      "no_guest_pii"
+    ]
+  },
+  "failure_policy": {
+    "on_missing_context": "ask_clarifying",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": [
+    "retail:read"
+  ],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": [
+      "hat",
+      "cx",
+      "service",
+      "guest"
+    ]
+  },
+  "playbook": {
+    "formulas": [
+      {
+        "id": "cx.complaint_rate",
+        "name": "Complaint rate",
+        "expression": "complaint_rate = complaint_count / max(transaction_count, epsilon)",
+        "inputs": [
+          "complaint_count",
+          "transaction_count"
+        ],
+        "outputs": [
+          "complaint_rate"
+        ],
+        "implemented_by": null,
+        "unit": "ratio",
+        "notes": "Aggregate only \u2014 never invent guest identities."
+      },
+      {
+        "id": "cx.queue_wait_index",
+        "name": "Queue wait index",
+        "expression": "queue_wait_index = observed_wait_minutes / max(target_wait_minutes, epsilon)",
+        "inputs": [
+          "observed_wait_minutes",
+          "target_wait_minutes"
+        ],
+        "outputs": [
+          "queue_wait_index"
+        ],
+        "implemented_by": null,
+        "unit": null,
+        "notes": "Requires evidenced wait metrics; otherwise ask clarifying."
+      }
+    ],
+    "standards": [
+      {
+        "id": "cx.no_guest_pii",
+        "name": "No guest PII",
+        "kind": "policy",
+        "ref": "",
+        "must_cite": true,
+        "description": "Diagnose themes and coverage, never fabricate customer identities."
+      },
+      {
+        "id": "cx.evidence_or_clarify",
+        "name": "Evidence or clarify",
+        "kind": "internal",
+        "ref": "",
+        "must_cite": true,
+        "description": "If complaint/queue evidence is missing, ask clarifying rather than invent KPIs."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "cx.service_failure_triage",
+        "name": "Service failure triage",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Identify theme (queue, floor condition, campaign promise) without PII",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "If coverage-driven, hand off to workforce roster",
+            "requires_confirmation": true
+          },
+          {
+            "step": 3,
+            "action": "If floor/incident-driven, hand off to store operations",
+            "requires_confirmation": false
+          },
+          {
+            "step": 4,
+            "action": "If campaign promise mismatch, hand off to marketing",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "complaint, NPS, queue, service level",
+        "handoff_to": "retail.hat.workforce_roster",
+        "requires_confirmation": false
+      }
+    ]
+  }
+}

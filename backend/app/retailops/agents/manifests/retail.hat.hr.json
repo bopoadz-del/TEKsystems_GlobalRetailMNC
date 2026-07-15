@@ -1,0 +1,227 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.hr",
+  "kind": "hat",
+  "display_name": "Retail HR Hat",
+  "discipline": "hr",
+  "extends": "retail.base",
+  "summary": "People policy, attendance exceptions, and HR-sensitive store issues. Hands roster capacity questions to the workforce roster hat.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      {
+        "type": "keyword",
+        "value": "hr"
+      },
+      {
+        "type": "keyword",
+        "value": "human resources"
+      },
+      {
+        "type": "keyword",
+        "value": "absence"
+      },
+      {
+        "type": "keyword",
+        "value": "onboarding"
+      },
+      {
+        "type": "keyword",
+        "value": "grievance"
+      },
+      {
+        "type": "keyword",
+        "value": "leave policy"
+      }
+    ],
+    "put_off_by": [
+      "disable:hr",
+      "disable:retail.hat.hr"
+    ]
+  },
+  "context_sources": [
+    {
+      "source_id": "hr_policies",
+      "kind": "project_documents",
+      "doc_roles": [
+        "policy",
+        "document"
+      ],
+      "description": "HR / people policies present in the project corpus"
+    }
+  ],
+  "allowed_paths": [
+    "fixtures/northstar/**"
+  ],
+  "allowed_actions": [
+    "retail.generate_operations_brief"
+  ],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.workforce_roster",
+      "when": "absence or covering shift requires roster change",
+      "carry": [
+        "store",
+        "role",
+        "shift_window"
+      ],
+      "requires_confirmation": true
+    },
+    {
+      "to_agent_id": "retail.hat.compliance",
+      "when": "labour or safety policy conflict",
+      "carry": [
+        "policy_ref",
+        "incident_ref"
+      ],
+      "requires_confirmation": false
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [
+      {
+        "key": "confirmed_hr_policy_interpretation",
+        "description": "Confirmed interpretation of a people policy clause",
+        "requires_confirmation": true
+      }
+    ],
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "employee_pii",
+      "health_data",
+      "unverified_claims"
+    ]
+  },
+  "verification": {
+    "grounding": "documents_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": [
+      "no_pii_in_memory",
+      "policy_citation_required"
+    ]
+  },
+  "failure_policy": {
+    "on_missing_context": "ask_clarifying",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": [
+    "retail:read"
+  ],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": [
+      "hat",
+      "hr",
+      "people"
+    ]
+  },
+  "playbook": {
+    "formulas": [
+      {
+        "id": "hr.absence_coverage_gap",
+        "name": "Absence coverage gap",
+        "expression": "coverage_gap_hours = required_role_hours - (rostered_hours - absence_hours)",
+        "inputs": [
+          "required_role_hours",
+          "rostered_hours",
+          "absence_hours"
+        ],
+        "outputs": [
+          "coverage_gap_hours"
+        ],
+        "implemented_by": null,
+        "unit": "hours",
+        "notes": "Computed only from documented roster/absence evidence; no employee PII in memory."
+      },
+      {
+        "id": "hr.policy_match",
+        "name": "Policy clause match score",
+        "expression": "policy_match = overlapping_policy_terms / max(query_terms, 1)",
+        "inputs": [
+          "overlapping_policy_terms",
+          "query_terms"
+        ],
+        "outputs": [
+          "policy_match"
+        ],
+        "implemented_by": null,
+        "unit": null,
+        "notes": "Cite the policy document; refuse unaided HR legal conclusions."
+      }
+    ],
+    "standards": [
+      {
+        "id": "hr.no_employee_pii",
+        "name": "No employee PII in memory",
+        "kind": "policy",
+        "ref": "",
+        "must_cite": true,
+        "description": "Never persist names, IDs, health, or grievance detail into learning/memory."
+      },
+      {
+        "id": "hr.policy_citation",
+        "name": "Policy citation required",
+        "kind": "policy",
+        "ref": "",
+        "must_cite": true,
+        "description": "Every HR guidance answer must cite an uploaded people policy."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "hr.absence_to_roster",
+        "name": "Absence \u2192 roster handoff",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Cite applicable leave/absence policy clause",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Quantify coverage impact without PII",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "Hand off shift cover to workforce roster",
+            "requires_confirmation": true
+          }
+        ],
+        "trigger": "absence or covering shift",
+        "handoff_to": "retail.hat.workforce_roster",
+        "requires_confirmation": true
+      },
+      {
+        "id": "hr.policy_interpretation",
+        "name": "Confirm policy interpretation",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Retrieve relevant policy passages",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Present candidate interpretation with citations",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "On confirmation, save confirmed_hr_policy_interpretation",
+            "requires_confirmation": true
+          }
+        ],
+        "trigger": "manager asks to lock an HR interpretation",
+        "handoff_to": null,
+        "requires_confirmation": true
+      }
+    ]
+  }
+}

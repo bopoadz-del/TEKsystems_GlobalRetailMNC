@@ -31,6 +31,9 @@ def test_list_and_get_actions(client, loaded_projects):
         "retail.generate_operations_brief",
         "retail.analyse_inventory_risk",
         "retail.check_promotion_compliance",
+        "retail.record_verified_outcome",
+        "retail.get_learning_summary",
+        "retail.recommend_reorder_parameters",
     }
     r2 = client.get("/v1/actions/retail.analyse_inventory_risk", headers=_headers(MANAGER, pid))
     assert r2.status_code == 200
@@ -150,8 +153,31 @@ async def test_unknown_request_never_fabricates(loaded_projects):
         out = await run_orchestrator(
             session=s, context=ctx, question="Please book me a flight to the moon."
         )
-    # Never returns an action result for an unknown request.
+    # Unsupported imperatives must not fall through to RAG fabrication.
+    assert out["route"] == "unsupported"
     assert out["action_result"] is None
+    assert "isn't a supported action" in out["answer"].lower() or "not a supported" in out["answer"].lower()
+
+
+@pytest.mark.asyncio
+async def test_action_ask_uses_deterministic_summary_with_fake_provider(loaded_projects):
+    pid = loaded_projects["Global Region"]
+    ctx = ActionContext(
+        user_id=MANAGER, tenant_id=TENANT, organisation_id=TENANT, project_id=pid,
+        permissions=["retail:read", "retail:analyse"], allowed_domains=["retail"],
+    )
+    with session_scope() as s:
+        out = await run_orchestrator(
+            session=s,
+            context=ctx,
+            question="Generate today's operations brief",
+        )
+    assert out["route"] == "action"
+    assert out["action_result"] is not None
+    assert out["action_result"].status.value == "success"
+    # Must not claim missing documents when the action succeeded under FakeProvider.
+    assert "could not find supporting information" not in out["answer"].lower()
+    assert "operations brief" in out["answer"].lower() or "retail.generate_operations_brief" in out["answer"].lower() or "Result sections" in out["answer"] or "completed" in out["answer"].lower()
 
 
 # ---------------------------------------------------------------------------

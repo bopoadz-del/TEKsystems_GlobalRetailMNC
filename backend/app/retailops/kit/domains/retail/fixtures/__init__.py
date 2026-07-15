@@ -77,3 +77,59 @@ PROMOTION_COMPLIANCE_NO_RULES: Dict[str, Any] = {
     "rules": [],
     "evidence": [{"text": "Store looks compliant.", "filename": "note.txt"}],
 }
+
+LEARNING_RECORD_HAPPY: Dict[str, Any] = {
+    "module": "demand_reorder",
+    "deduplication_key": "eval-demand-1",
+    "payload": {
+        "sku": "BEV-2201",
+        "store": "Riyadh Olaya",
+        "forecast_units": 100,
+        "actual_units": 120,
+        "current_reorder_point": 40,
+        "safety_stock": 10,
+        "period_start": "2024-01-01",
+        "period_end": "2024-01-07",
+    },
+}
+
+LEARNING_SUMMARY_HAPPY: Dict[str, Any] = {"module": "demand_reorder", "limit": 10}
+
+REORDER_RECOMMEND_HAPPY: Dict[str, Any] = {
+    "sku": "BEV-2201",
+    "store": "Riyadh Olaya",
+    "current_reorder_point": 40,
+    "current_safety_stock": 10,
+}
+
+REORDER_RECOMMEND_NO_PROFILE: Dict[str, Any] = {
+    "sku": "UNKNOWN-SKU",
+    "store": "Riyadh Olaya",
+}
+
+EXPORT_DOCUMENT_CUSTOM_PDF: Dict[str, Any] = {
+    "format": "pdf",
+    "document_kind": "custom",
+    "title": "Eval Export",
+    "sections": [{"heading": "Notes", "bullets": ["Fixture only"]}],
+}
+
+EVALUATION_FIXTURES: Dict[str, Dict[str, Any]] = {
+    "operations_brief_happy": OPERATIONS_BRIEF_HAPPY,
+    "operations_brief_no_records": OPERATIONS_BRIEF_NO_RECORDS,
+    "inventory_risk_happy": INVENTORY_RISK_HAPPY,
+    "inventory_risk_no_data": INVENTORY_RISK_NO_DATA,
+    "promotion_compliance_happy": PROMOTION_COMPLIANCE_HAPPY,
+    "promotion_compliance_no_rules": PROMOTION_COMPLIANCE_NO_RULES,
+    "learning_record_happy": LEARNING_RECORD_HAPPY,
+    "learning_summary_happy": LEARNING_SUMMARY_HAPPY,
+    "reorder_recommend_happy": REORDER_RECOMMEND_HAPPY,
+    "reorder_recommend_no_profile": REORDER_RECOMMEND_NO_PROFILE,
+    "export_document_custom_pdf": EXPORT_DOCUMENT_CUSTOM_PDF,
+}
+
+
+def get_evaluation_fixture(name: str) -> Dict[str, Any]:
+    if name not in EVALUATION_FIXTURES:
+        raise KeyError(f"unknown evaluation fixture '{name}'")
+    return dict(EVALUATION_FIXTURES[name])

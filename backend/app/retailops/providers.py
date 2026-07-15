@@ -74,19 +74,27 @@ class AzureOpenAIProvider(LLMProvider):
 
 
 class OpenAICompatibleProvider(LLMProvider):
-    """Fallback for any OpenAI-compatible endpoint (OpenAI, Qwen, Ollama-openai)."""
+    """Fallback for any OpenAI-compatible endpoint (OpenAI, Ollama Cloud, Kimi, …)."""
 
     name = "openai_compatible"
 
     def __init__(self) -> None:
-        self.api_key = os.getenv("OPENAI_API_KEY", os.getenv("RETAILOPS_LLM_API_KEY", ""))
+        self.api_key = (
+            os.getenv("OPENAI_API_KEY")
+            or os.getenv("RETAILOPS_LLM_API_KEY")
+            or os.getenv("OLLAMA_API_KEY")
+            or ""
+        )
         self.base_url = os.getenv(
-            "OPENAI_BASE_URL", os.getenv("RETAILOPS_LLM_BASE_URL", "https://api.openai.com/v1")
+            "OPENAI_BASE_URL",
+            os.getenv("RETAILOPS_LLM_BASE_URL", "https://api.openai.com/v1"),
         ).rstrip("/")
-        self.model = os.getenv("RETAILOPS_LLM_MODEL", os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+        self.model = os.getenv(
+            "RETAILOPS_LLM_MODEL", os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        )
 
     def available(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.api_key and self.base_url)
 
     async def complete(
         self, system: str, prompt: str, *, temperature: float = 0.1, max_tokens: int = 800
@@ -116,6 +124,22 @@ class OpenAICompatibleProvider(LLMProvider):
                 return data["choices"][0]["message"]["content"]
         except Exception as exc:  # noqa: BLE001
             raise ProviderError(f"OpenAI-compatible request failed: {exc}") from exc
+
+
+def _ollama_cloud_provider() -> OpenAICompatibleProvider:
+    """Ollama Cloud (https://ollama.com/v1) — OpenAI-compatible hosted models."""
+    p = OpenAICompatibleProvider()
+    p.name = "ollama_cloud"
+    # Apply Ollama Cloud defaults when not explicitly overridden.
+    if not (
+        os.getenv("OPENAI_BASE_URL") or os.getenv("RETAILOPS_LLM_BASE_URL")
+    ):
+        p.base_url = "https://ollama.com/v1"
+    if not (os.getenv("RETAILOPS_LLM_MODEL") or os.getenv("OPENAI_MODEL")):
+        p.model = "ministral-3:8b"
+    if not p.api_key:
+        p.api_key = os.getenv("OLLAMA_API_KEY", "")
+    return p
 
 
 class FakeProvider(LLMProvider):
@@ -156,7 +180,7 @@ class FakeProvider(LLMProvider):
 
 def get_provider(preference: Optional[str] = None) -> LLMProvider:
     """Resolve a provider. Default is deterministic + credential-free."""
-    preference = preference or os.getenv("RETAILOPS_LLM_PROVIDER", "auto")
+    preference = (preference or os.getenv("RETAILOPS_LLM_PROVIDER", "auto")).lower()
     if preference == "fake":
         return FakeProvider()
     if preference == "azure":
@@ -164,15 +188,32 @@ def get_provider(preference: Optional[str] = None) -> LLMProvider:
         if not provider.available():
             raise ProviderError("Azure OpenAI selected but not configured")
         return provider
-    if preference == "openai":
+    if preference in {"openai", "openai_compatible"}:
         provider = OpenAICompatibleProvider()
         if not provider.available():
             raise ProviderError("OpenAI-compatible selected but not configured")
         return provider
-    # auto: prefer Azure, then OpenAI-compatible, else deterministic fake.
+    if preference in {"ollama", "ollama_cloud"}:
+        provider = _ollama_cloud_provider()
+        if not provider.available():
+            raise ProviderError(
+                "Ollama Cloud selected but OLLAMA_API_KEY / OPENAI_API_KEY is missing"
+            )
+        return provider
+    # auto: prefer Azure, then Ollama Cloud / OpenAI-compatible, else fake.
     azure = AzureOpenAIProvider()
     if azure.available():
         return azure
+    # If base URL already points at ollama.com, or an Ollama key is present, prefer cloud.
+    base = (
+        os.getenv("OPENAI_BASE_URL")
+        or os.getenv("RETAILOPS_LLM_BASE_URL")
+        or ""
+    ).lower()
+    if "ollama.com" in base or os.getenv("OLLAMA_API_KEY"):
+        ollama = _ollama_cloud_provider()
+        if ollama.available():
+            return ollama
     openai = OpenAICompatibleProvider()
     if openai.available():
         return openai

@@ -2,11 +2,13 @@
 
 Two canonical projects are created and their documents ingested with document
 roles (used by schema-driven context enrichment). All data is fictional and
-contains no retailer brand names.
+contains no retailer brand names. Verified learning outcomes are loaded
+idempotently into PostgreSQL learning tables.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Dict
 
@@ -14,8 +16,10 @@ from sqlalchemy.orm import Session
 
 from app.retailops import bootstrap
 from app.retailops.ingestion import ingest_document
+from app.retailops.learning import RetailOutcomeLearningEngine
 
 _HERE = Path(__file__).resolve().parent / "demo"
+_LEARNING = _HERE / "learning" / "verified_outcomes.json"
 
 TENANT_ID = "retail"
 TENANT_NAME = "Retail Demo Tenant"
@@ -47,12 +51,49 @@ def _role_for(filename: str) -> str:
     return "document"
 
 
+def load_learning_fixtures(
+    session: Session,
+    *,
+    tenant_id: str,
+    project_ids: Dict[str, str],
+    verified_by: str = MANAGER_ID,
+) -> int:
+    """Load verified outcomes. Returns number of newly written events."""
+    if not _LEARNING.exists():
+        return 0
+    data = json.loads(_LEARNING.read_text(encoding="utf-8"))
+    target_canonical = data.get("project_canonical") or "Global Region"
+    project_id = project_ids.get(target_canonical)
+    if not project_id:
+        return 0
+    engine = RetailOutcomeLearningEngine()
+    written = 0
+    for item in data.get("events") or []:
+        result = engine.record_verified_outcome(
+            session,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            module=item["module"],
+            payload=item.get("payload") or {},
+            verified_by=verified_by,
+            deduplication_key=item["deduplication_key"],
+            source_reference=f"fixtures://learning/{item['deduplication_key']}",
+            verification_status="verified",
+        )
+        if not result.get("idempotent"):
+            written += 1
+    return written
+
+
 def load_fixtures(session: Session, tenant_id: str = TENANT_ID) -> Dict[str, str]:
     """Ingest the fixture pack. Returns {canonical_name: project_id}."""
     bootstrap.ensure_tenant(session, tenant_id, TENANT_NAME)
     bootstrap.ensure_user(
-        session, MANAGER_ID, tenant_id,
-        name="Ops Manager", permissions=["retail:read", "retail:analyse"],
+        session,
+        MANAGER_ID,
+        tenant_id,
+        name="Ops Manager",
+        permissions=["retail:read", "retail:analyse", "retail:learning_write"],
     )
     bootstrap.ensure_user(
         session, VIEWER_ID, tenant_id, name="Viewer", permissions=["retail:read"],
@@ -82,4 +123,7 @@ def load_fixtures(session: Session, tenant_id: str = TENANT_ID) -> Dict[str, str
             meta["knowledge_layer"] = "tenant_project"
             doc.meta = meta
         session.flush()
+
+    load_learning_fixtures(session, tenant_id=tenant_id, project_ids=project_ids)
+    session.flush()
     return project_ids

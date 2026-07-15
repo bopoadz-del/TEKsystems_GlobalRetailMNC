@@ -22,9 +22,19 @@ services:
         value: fastembed
       - key: HF_HUB_DISABLE_XET
         value: "1"
+      # OpenAI chat (set OPENAI_API_KEY in Dashboard — never commit).
       - key: RETAILOPS_LLM_PROVIDER
-        value: auto
-      # Azure OpenAI is optional; provide as secrets when available.
+        value: openai
+      - key: OPENAI_BASE_URL
+        value: https://api.openai.com/v1
+      - key: RETAILOPS_LLM_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_API_KEY
+        sync: false
+      # Optional: Ollama Cloud as alternate OpenAI-compatible backend.
+      - key: OLLAMA_API_KEY
+        sync: false
+      # Azure OpenAI remains optional.
       - key: AZURE_OPENAI_ENDPOINT
         sync: false
       - key: AZURE_OPENAI_API_KEY

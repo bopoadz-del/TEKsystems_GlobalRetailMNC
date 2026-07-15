@@ -196,6 +196,98 @@ class RetailPackSource(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+# ---------------------------------------------------------------------------
+# Outcome learning tables (verified operational events + calculated advisories)
+# ---------------------------------------------------------------------------
+
+
+class RetailLearningEvent(Base):
+    """Immutable verified operational observation used for outcome learning."""
+
+    __tablename__ = "retail_learning_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "project_id",
+            "deduplication_key",
+            name="uq_learning_event_dedupe",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    project_id: Mapped[str] = mapped_column(String(64), index=True)
+    module: Mapped[str] = mapped_column(String(64), index=True)
+    event_type: Mapped[str] = mapped_column(String(64))
+    entity_type: Mapped[str] = mapped_column(String(64))
+    entity_key: Mapped[str] = mapped_column(String(255), index=True)
+    event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    period_start: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    period_end: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    planned_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    actual_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    unit: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    event_payload: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
+    source_document_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    source_action_run_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    source_reference: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    verification_status: Mapped[str] = mapped_column(String(32), default="unverified")
+    verified_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    deduplication_key: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class RetailLearningProfile(Base):
+    """Calculated advisory knowledge scoped to a tenant + project."""
+
+    __tablename__ = "retail_learning_profiles"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "project_id",
+            "module",
+            "entity_type",
+            "entity_key",
+            name="uq_learning_profile_entity",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    project_id: Mapped[str] = mapped_column(String(64), index=True)
+    module: Mapped[str] = mapped_column(String(64), index=True)
+    entity_type: Mapped[str] = mapped_column(String(64))
+    entity_key: Mapped[str] = mapped_column(String(255), index=True)
+    metrics: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
+    sample_count: Mapped[int] = mapped_column(Integer, default=0)
+    confidence: Mapped[str] = mapped_column(String(16), default="low")
+    source_period_start: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source_period_end: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    last_event_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    last_calculated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+# ---------------------------------------------------------------------------
+# retail_core_open_v1 structured public evaluation tables (row-level data)
+# ---------------------------------------------------------------------------
+
+
 class RetailProduct(Base):
     __tablename__ = "retail_products"
     __table_args__ = (
@@ -278,3 +370,40 @@ class RetailTransaction(Base):
     country: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     is_cancellation: Mapped[bool] = mapped_column(Boolean, default=False)
     meta: Mapped[Dict[str, Any]] = mapped_column("metadata", JSONB, default=dict)
+
+
+# ---------------------------------------------------------------------------
+# Discipline-hat teachable memory
+# ---------------------------------------------------------------------------
+
+
+class RetailAgentMemory(Base):
+    """Confirmed discipline-hat memory entries (teachable overrides).
+
+    Writes require explicit confirmation and must match a hat ``memory.save`` key.
+    Never stores LLM free text, secrets, or PII payloads.
+    """
+
+    __tablename__ = "retail_agent_memory"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "project_id",
+            "agent_id",
+            "key",
+            name="uq_agent_memory_key",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    project_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str] = mapped_column(String(128), index=True)
+    key: Mapped[str] = mapped_column(String(128))
+    value: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confirmed_by: Mapped[str] = mapped_column(String(64))
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

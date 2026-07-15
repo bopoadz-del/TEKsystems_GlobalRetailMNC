@@ -1,0 +1,255 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.store_operations",
+  "kind": "hat",
+  "display_name": "Store Operations Hat",
+  "discipline": "store_operations",
+  "extends": "retail.base",
+  "summary": "Floor execution, incidents, cleaning/signage follow-ups, and duty-manager escalation hygiene.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      {
+        "type": "intent",
+        "value": "store_operations"
+      },
+      {
+        "type": "intent",
+        "value": "incident"
+      },
+      {
+        "type": "keyword",
+        "value": "wet floor"
+      },
+      {
+        "type": "keyword",
+        "value": "incident"
+      },
+      {
+        "type": "keyword",
+        "value": "duty manager"
+      },
+      {
+        "type": "keyword",
+        "value": "opening checklist"
+      },
+      {
+        "type": "action_id",
+        "value": "retail.generate_operations_brief"
+      }
+    ],
+    "put_off_by": [
+      "disable:store_ops",
+      "disable:retail.hat.store_operations"
+    ]
+  },
+  "context_sources": [
+    {
+      "source_id": "ops_docs",
+      "kind": "project_documents",
+      "doc_roles": [
+        "incident",
+        "policy",
+        "document"
+      ],
+      "description": "Store ops, incidents, and SOP documents"
+    },
+    {
+      "source_id": "exception_learning",
+      "kind": "learning_profiles",
+      "modules": [
+        "store_exceptions"
+      ],
+      "description": "Recurring store exception patterns"
+    }
+  ],
+  "allowed_paths": [
+    "fixtures/northstar/**"
+  ],
+  "allowed_actions": [
+    "retail.export_document",
+    "retail.generate_operations_brief"
+  ],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.compliance",
+      "when": "incident or floor condition requires regulatory grounding",
+      "carry": [
+        "store",
+        "topic"
+      ],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.workforce_roster",
+      "when": "coverage or duty-manager staffing affects response",
+      "carry": [
+        "store",
+        "role",
+        "shift_window"
+      ],
+      "requires_confirmation": true
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [
+      {
+        "key": "confirmed_ops_followup",
+        "description": "Confirmed store-ops follow-up item after incident review",
+        "requires_confirmation": true
+      }
+    ],
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "unverified_claims",
+      "guest_pii"
+    ]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": [
+      "no_invented_sops"
+    ]
+  },
+  "failure_policy": {
+    "on_missing_context": "dependency_required",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": [
+    "retail:read",
+    "retail:analyse"
+  ],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": [
+      "hat",
+      "store_ops",
+      "incident",
+      "floor"
+    ]
+  },
+  "playbook": {
+    "formulas": [
+      {
+        "id": "store_ops.exception_risk",
+        "name": "Store exception risk score",
+        "expression": "severity_weighted_risk_score = sum(severity_weight(event)) / max(sample_count, 1)",
+        "inputs": [
+          "exception_events",
+          "severity_weights"
+        ],
+        "outputs": [
+          "severity_weighted_risk_score"
+        ],
+        "implemented_by": "learning.store_exceptions",
+        "unit": null,
+        "notes": ""
+      },
+      {
+        "id": "store_ops.escalation_sla",
+        "name": "Duty-manager escalation SLA check",
+        "expression": "sla_met = (notified_at - incident_at) <= 15 minutes",
+        "inputs": [
+          "incident_at",
+          "notified_at"
+        ],
+        "outputs": [
+          "sla_met"
+        ],
+        "implemented_by": null,
+        "unit": "minutes",
+        "notes": "Aligned to store escalation policy example (15 minutes)."
+      }
+    ],
+    "standards": [
+      {
+        "id": "store_ops.no_invented_sops",
+        "name": "No invented SOPs",
+        "kind": "policy",
+        "ref": "",
+        "must_cite": true,
+        "description": "Cite retrieved SOPs/incident docs; otherwise state insufficient evidence."
+      },
+      {
+        "id": "store_ops.incident_hygiene",
+        "name": "Incident hygiene",
+        "kind": "safety",
+        "ref": "",
+        "must_cite": true,
+        "description": "Cordon, clean, signage, and duty-manager notify are mandatory follow-ups for slip/hazard incidents."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "store_ops.slip_response",
+        "name": "Slip / wet-floor incident response",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Cordon off and clean the affected area",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Place wet-floor signage",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "Administer first aid as needed; record guest preference on further care",
+            "requires_confirmation": false
+          },
+          {
+            "step": 4,
+            "action": "Notify duty manager within 15 minutes",
+            "requires_confirmation": false
+          },
+          {
+            "step": 5,
+            "action": "Log incident and schedule cleaning/signage follow-up review",
+            "requires_confirmation": false
+          },
+          {
+            "step": 6,
+            "action": "If regulatory grounding needed, hand off to compliance",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "slip, hazard, or floor incident",
+        "handoff_to": "retail.hat.compliance",
+        "requires_confirmation": false
+      },
+      {
+        "id": "store_ops.ops_brief",
+        "name": "Operations brief generation",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Collect open signals across inventory/supplier/promo/incident docs",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Run retail.generate_operations_brief",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "Hand off coverage gaps to workforce roster when duty coverage is thin",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "operations brief request",
+        "handoff_to": "retail.hat.workforce_roster",
+        "requires_confirmation": false
+      }
+    ]
+  }
+}

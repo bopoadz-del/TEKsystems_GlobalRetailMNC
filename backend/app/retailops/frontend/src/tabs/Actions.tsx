@@ -1,7 +1,33 @@
 import { useEffect, useState } from "react";
 import { api, type ActionResult, type ActionSpec, type Principal } from "../api";
 
-function ActionCard({ principal, spec }: { principal: Principal; spec: ActionSpec }) {
+function downloadBase64(b64: string, filename: string, contentType: string) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const blob = new Blob([bytes], { type: contentType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function omitBase64(output: Record<string, unknown>) {
+  const { document_base64: _drop, ...rest } = output;
+  return rest;
+}
+
+function ActionCard({
+  principal,
+  spec,
+  onResult,
+}: {
+  principal: Principal;
+  spec: ActionSpec;
+  onResult?: (r: ActionResult) => void;
+}) {
   const props = spec.input_schema.properties ?? {};
   const required = new Set(spec.input_schema.required ?? []);
   // Only scalar inputs are rendered as form fields; complex inputs (records,
@@ -25,7 +51,9 @@ function ActionCard({ principal, spec }: { principal: Principal; spec: ActionSpe
       for (const k of scalarKeys) {
         if (values[k] !== undefined && values[k] !== "") args[k] = values[k];
       }
-      setResult(await api.execute(principal, spec.action_id, args, confirm));
+      const r = await api.execute(principal, spec.action_id, args, confirm);
+      setResult(r);
+      onResult?.(r);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -65,8 +93,12 @@ function ActionCard({ principal, spec }: { principal: Principal; spec: ActionSpe
         </label>
       )}
       <div style={{ marginTop: 8 }}>
-        <button className="primary" disabled={busy} onClick={run}>
-          {busy ? "Running…" : "Run action"}
+        <button
+          className="primary"
+          disabled={busy || (spec.confirmation_required && !confirm)}
+          onClick={run}
+        >
+          {busy ? "Running…" : spec.confirmation_required && !confirm ? "Confirm required" : "Run action"}
         </button>
       </div>
       {error && <p className="error">{error}</p>}
@@ -84,7 +116,28 @@ function ActionCard({ principal, spec }: { principal: Principal; spec: ActionSpe
           {result.status === "success" && (
             <>
               <p className="muted">{result.evidence.length} evidence reference(s) · request {result.request_id}</p>
-              <pre>{JSON.stringify(result.output, null, 2)}</pre>
+              {typeof result.output.document_base64 === "string" && (
+                <p>
+                  <button
+                    className="primary"
+                    type="button"
+                    onClick={() =>
+                      downloadBase64(
+                        String(result.output.document_base64),
+                        String(result.output.filename || "export.bin"),
+                        String(result.output.content_type || "application/octet-stream"),
+                      )
+                    }
+                  >
+                    Download {String(result.output.filename || "file")}
+                  </button>
+                  <span className="muted">
+                    {" "}
+                    · {String(result.output.format || "")} · {String(result.output.byte_size || "")} bytes
+                  </span>
+                </p>
+              )}
+              <pre>{JSON.stringify(omitBase64(result.output), null, 2)}</pre>
             </>
           )}
         </div>
@@ -93,7 +146,13 @@ function ActionCard({ principal, spec }: { principal: Principal; spec: ActionSpe
   );
 }
 
-export function Actions({ principal }: { principal: Principal }) {
+export function Actions({
+  principal,
+  onResult,
+}: {
+  principal: Principal;
+  onResult?: (r: ActionResult) => void;
+}) {
   const [specs, setSpecs] = useState<ActionSpec[]>([]);
   const [error, setError] = useState("");
 
@@ -103,9 +162,9 @@ export function Actions({ principal }: { principal: Principal }) {
 
   if (error) return <div className="card error">{error}</div>;
   return (
-    <div>
+    <div className="outcome-studio">
       {specs.map((s) => (
-        <ActionCard key={s.action_id} principal={principal} spec={s} />
+        <ActionCard key={s.action_id} principal={principal} spec={s} onResult={onResult} />
       ))}
       {specs.length === 0 && <div className="card muted">No actions available.</div>}
     </div>

@@ -29,6 +29,8 @@ _TABLES = [
     "documents", "projects", "users", "tenants",
     "retail_transactions", "retail_promotions", "retail_stock_status",
     "retail_sales", "retail_products", "retail_pack_sources",
+    "retail_learning_profiles", "retail_learning_events",
+    "retail_agent_memory",
 ]
 
 

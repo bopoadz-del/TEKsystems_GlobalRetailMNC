@@ -1,0 +1,201 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.compliance",
+  "kind": "hat",
+  "display_name": "Compliance & Safety Hat",
+  "discipline": "compliance",
+  "extends": "retail.base",
+  "summary": "Policy, labeling, safety, and advertising compliance grounded in retrieved docs and open regulatory packs.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      {
+        "type": "intent",
+        "value": "compliance"
+      },
+      {
+        "type": "keyword",
+        "value": "compliance"
+      },
+      {
+        "type": "keyword",
+        "value": "osha"
+      },
+      {
+        "type": "keyword",
+        "value": "fda"
+      },
+      {
+        "type": "keyword",
+        "value": "ftc"
+      },
+      {
+        "type": "keyword",
+        "value": "food code"
+      }
+    ],
+    "put_off_by": [
+      "disable:compliance",
+      "disable:retail.hat.compliance"
+    ]
+  },
+  "context_sources": [
+    {
+      "source_id": "compliance_docs",
+      "kind": "official_guidance",
+      "doc_roles": [
+        "policy",
+        "document"
+      ],
+      "description": "Official guidance and policy documents in the corpus"
+    }
+  ],
+  "allowed_paths": [
+    "fixtures/northstar/**"
+  ],
+  "allowed_actions": [
+    "retail.check_promotion_compliance"
+  ],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.store_operations",
+      "when": "compliance guidance requires store-level SOP or incident follow-up",
+      "carry": [
+        "topic",
+        "citation_urls"
+      ],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.hr",
+      "when": "workplace safety implications involve staffing or training",
+      "carry": [
+        "topic",
+        "policy_ref"
+      ],
+      "requires_confirmation": false
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [],
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "unverified_claims",
+      "legal_advice"
+    ]
+  },
+  "verification": {
+    "grounding": "documents_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": [
+      "citation_required",
+      "no_legal_conclusions"
+    ]
+  },
+  "failure_policy": {
+    "on_missing_context": "dependency_required",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "block"
+  },
+  "permissions": [
+    "retail:read"
+  ],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": [
+      "hat",
+      "compliance",
+      "safety",
+      "regulatory"
+    ]
+  },
+  "playbook": {
+    "formulas": [
+      {
+        "id": "compliance.citation_density",
+        "name": "Citation density",
+        "expression": "citation_density = cited_passages / max(claim_sentences, 1)",
+        "inputs": [
+          "cited_passages",
+          "claim_sentences"
+        ],
+        "outputs": [
+          "citation_density"
+        ],
+        "implemented_by": null,
+        "unit": null,
+        "notes": "Block answers with claim_sentences > 0 and cited_passages == 0."
+      },
+      {
+        "id": "compliance.promo_rule_alignment",
+        "name": "Promo rule alignment",
+        "expression": "aligned = retail.check_promotion_compliance.compliant",
+        "inputs": [
+          "rule_records",
+          "evidence_records"
+        ],
+        "outputs": [
+          "aligned",
+          "confidence"
+        ],
+        "implemented_by": "retail.check_promotion_compliance",
+        "unit": null,
+        "notes": ""
+      }
+    ],
+    "standards": [
+      {
+        "id": "compliance.cite_or_refuse",
+        "name": "Cite or refuse",
+        "kind": "regulatory",
+        "ref": "fixtures/northstar/**",
+        "must_cite": true,
+        "description": "Every policy claim needs retrieved citation URLs; low confidence blocks."
+      },
+      {
+        "id": "compliance.no_legal_conclusions",
+        "name": "No legal conclusions",
+        "kind": "policy",
+        "ref": "",
+        "must_cite": true,
+        "description": "Do not invent legal advice; stick to cited guidance language."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "compliance.regulatory_ask",
+        "name": "Regulatory / safety ask",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Retrieve official guidance / policy corpus",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Answer only with citations",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "If store-level follow-up needed, hand off to store operations",
+            "requires_confirmation": false
+          },
+          {
+            "step": 4,
+            "action": "If workplace training/staffing implication, hand off to HR",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "compliance, OSHA, FDA, FTC, food code",
+        "handoff_to": "retail.hat.store_operations",
+        "requires_confirmation": false
+      }
+    ]
+  }
+}
