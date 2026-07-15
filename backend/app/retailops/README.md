@@ -111,6 +111,27 @@ Namespaced deliverables — adding one requires **no** router change:
 Kit id exposed on `/health` as `kit_snapshot` / legacy `blocks_commit`:
 `local-retail-kit-1.2.0`.
 
+## Login
+
+The UI is prefilled with the working pilot identity:
+
+- **User:** `u_platform`
+- **Tenant:** `platform`
+- **Project:** `prj_prebuilt_retail_core`
+
+This is the tenant/project seeded by the `retail_core_open_v1` platform-prebuilt
+pack (see below); it authenticates out of the box once that pack has been
+loaded on the target deployment. Regional fixture projects (Australia Region /
+Global Region, tenant `retail`) also work once `load_fixtures` has run, but
+their project ids are generated per-deployment — paste one into the **Project
+ID** field instead.
+
+Browsers that signed in before this default was fixed may have the old,
+never-valid `tenant=northstar` / `user=u_ops_manager` principal cached in
+`localStorage`. The frontend detects that one specific stale value and
+migrates it back to the working default on load, so a normal reload — not a
+manual cache clear — is enough to recover a stuck session.
+
 ## Local run (Docker — preferred)
 
 ```bash
@@ -150,11 +171,26 @@ cd backend && PYTHONPATH=. pytest tests/retailops -q
 
 If the test database is unreachable, tests skip rather than fail hard.
 
+## Oracle smoke (fixtures + live checklist)
+
+`scripts/oracle_smoke.py` is a stdlib-only ad-hoc runner (no third-party
+deps): it POSTs each action's deterministic `evaluation_fixtures` straight to
+`/execute` and asserts the guaranteed status, then also drives the RENDER.md
+smoke checklist (health, root, actions discovery, a RAG `/v1/ask`, audit
+persistence).
+
+```bash
+python scripts/oracle_smoke.py --base-url https://retailops-3ayp.onrender.com \
+    --user u_platform --tenant platform --project prj_prebuilt_retail_core
+```
+
 ## Render
 
-See [RENDER.md](RENDER.md). Blueprint: root `render.yaml` (same Dockerfile as local).
+See [RENDER.md](RENDER.md) for the full deploy/env/smoke-test guide. Blueprint:
+root `render.yaml` (same Dockerfile as local).
 
-Live service (when deployed): https://retailops-3ayp.onrender.com
+Live: https://retailops-3ayp.onrender.com — this service auto-deploys from
+`feat/retailops-platform-v1`, not `main` (`main` is behind this branch).
 
 ## API examples
 
