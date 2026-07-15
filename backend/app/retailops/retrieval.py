@@ -143,6 +143,11 @@ def hybrid_search(
     config = config or get_config()
     top_k = top_k or config.top_k
 
+    from app.retailops.embedding_guard import assert_compatible
+
+    # Refuse queries when stored vectors were produced by a different embedder.
+    assert_compatible(session, tenant_id=tenant_id, project_id=project_id)
+
     semantic = _semantic(session, tenant_id, project_id, query, config.vector_candidates)
     lexical = _lexical(session, tenant_id, project_id, query, config.lexical_candidates)
 

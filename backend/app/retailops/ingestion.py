@@ -253,12 +253,20 @@ def ingest_document(
     try:
         units = parse_bytes(data, filename, content_type)
         chunks = units_to_chunks(units)
+        from app.retailops.embedding_guard import assert_compatible, fingerprint
+
         embedder = get_embedder()
+        fp = assert_compatible(
+            session, tenant_id=tenant_id, project_id=project_id, embedder=embedder
+        )
         texts = [c.text for c in chunks]
         vectors = embedder.embed_batch(texts) if texts else []
         pages = {u.page for u in units if u.page}
         for ordinal, (unit, vector) in enumerate(zip(chunks, vectors)):
-            meta: Dict[str, Any] = {"unit_type": unit.unit_type}
+            meta: Dict[str, Any] = {
+                "unit_type": unit.unit_type,
+                **fp,
+            }
             if unit.rows is not None:
                 meta["rows"] = unit.rows
             session.add(
@@ -281,6 +289,7 @@ def ingest_document(
         doc.status = "processed"
         doc.chunk_count = len(chunks)
         doc.page_count = len(pages) or None
+        doc.meta = {**(doc.meta or {}), **fingerprint(embedder)}
     except Exception as exc:  # noqa: BLE001
         doc.status = "failed"
         doc.error = str(exc)[:500]

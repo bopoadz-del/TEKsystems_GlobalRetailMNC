@@ -5,14 +5,17 @@ export interface Principal {
 }
 
 const BASE = import.meta.env.VITE_API_URL ?? "";
+const API_KEY = import.meta.env.VITE_RETAILOPS_API_KEY ?? "";
 
 function headers(p: Principal): Record<string, string> {
-  return {
+  const h: Record<string, string> = {
     "Content-Type": "application/json",
     "X-User-Id": p.userId,
     "X-Tenant-Id": p.tenantId,
     "X-Project-Id": p.projectId,
   };
+  if (API_KEY) h["X-API-Key"] = API_KEY;
+  return h;
 }
 
 async function req<T>(path: string, p: Principal, init?: RequestInit): Promise<T> {

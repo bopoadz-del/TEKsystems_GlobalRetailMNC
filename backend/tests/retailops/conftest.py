@@ -2,8 +2,9 @@
 
 Set ``RETAILOPS_TEST_DATABASE_URL`` to point at a Postgres database with the
 ``vector`` extension available. Defaults to a local ``retailops_test`` DB.
-Tests are skipped (not failed) if the database is unreachable, so the suite
-degrades gracefully in environments without Postgres.
+
+Locally, unreachable DBs skip. In CI (``CI=true`` or ``RETAILOPS_REQUIRE_DB=1``)
+an unreachable DB **fails** the suite instead of silently skipping.
 """
 
 from __future__ import annotations
@@ -12,7 +13,6 @@ import os
 os.environ.setdefault("RETAILOPS_EMBED_BACKEND", "hash")
 
 import pytest
-from sqlalchemy import text
 
 TEST_DB_URL = os.getenv(
     "RETAILOPS_TEST_DATABASE_URL",
@@ -34,8 +34,15 @@ _TABLES = [
 ]
 
 
+def _require_db() -> bool:
+    flag = (os.getenv("RETAILOPS_REQUIRE_DB") or "").lower()
+    if flag in ("1", "true", "yes"):
+        return True
+    return (os.getenv("CI") or "").lower() in ("1", "true", "yes")
+
+
 def _db_available() -> bool:
-    from sqlalchemy import create_engine
+    from sqlalchemy import create_engine, text
 
     try:
         eng = create_engine(TEST_DB_URL)
@@ -47,10 +54,21 @@ def _db_available() -> bool:
         return False
 
 
+def _ensure_db_or_abort():
+    if _db_available():
+        return
+    msg = (
+        f"RetailOps test database is not available at {TEST_DB_URL}. "
+        "Start Postgres with pgvector or set RETAILOPS_TEST_DATABASE_URL."
+    )
+    if _require_db():
+        pytest.exit(msg, returncode=1)
+    pytest.skip(msg)
+
+
 @pytest.fixture(scope="session")
 def _migrate():
-    if not _db_available():
-        pytest.skip("RetailOps test database is not available")
+    _ensure_db_or_abort()
     from app.retailops.db import init_engine, reset_engine
     from app.retailops.migrations_runner import downgrade_to_base, upgrade_to_head
 
@@ -66,6 +84,8 @@ def _migrate():
 
 @pytest.fixture()
 def db(_migrate):
+    from sqlalchemy import text
+
     from app.retailops.db import session_scope
 
     with session_scope() as session:

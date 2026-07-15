@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.retailops import BLOCKS_COMMIT, KIT_SNAPSHOT_ID, RETAILOPS_VERSION
 from app.retailops.api import router as api_router
@@ -27,6 +29,62 @@ logger = logging.getLogger("retailops")
 
 _FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 _FRONTEND_INDEX = _FRONTEND_DIST / "index.html"
+
+# Paths that stay reachable without RETAILOPS_API_KEY (when that env is set).
+_PUBLIC_PREFIXES = (
+    "/health",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/assets/",
+)
+
+
+def _cors_origins() -> list[str]:
+    """Env allowlist for browsers; never use ``*`` when an allowlist is set.
+
+    ``RETAILOPS_CORS_ORIGINS`` = comma-separated origins.
+    If unset: local/dev keeps ``*``; when ``RETAILOPS_ENV`` is production/
+    prod, defaults to empty (same-origin SPA / non-browser clients only).
+    """
+    raw = os.getenv("RETAILOPS_CORS_ORIGINS", "").strip()
+    if raw:
+        return [o.strip() for o in raw.split(",") if o.strip()]
+    env = (os.getenv("RETAILOPS_ENV") or os.getenv("ENV") or "").lower()
+    if env in {"prod", "production"}:
+        return []
+    return ["*"]
+
+
+class ApiKeyMiddleware(BaseHTTPMiddleware):
+    """Optional shared-secret gate via ``RETAILOPS_API_KEY`` / ``X-API-Key``.
+
+    When the env var is unset, the middleware is a no-op (local/dev). This is a
+    deploy-time shared secret only — not end-user identity. Tenant isolation
+    still relies on trusted ``X-User-Id`` / ``X-Tenant-Id`` / ``X-Project-Id``
+    headers resolved server-side.
+    """
+
+    def __init__(self, app, api_key: str) -> None:
+        super().__init__(app)
+        self.api_key = api_key
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        if path == "/" or any(path == p or path.startswith(p) for p in _PUBLIC_PREFIXES):
+            return await call_next(request)
+        # SPA deep links when the frontend dist is mounted.
+        if not path.startswith("/v1/") and _FRONTEND_INDEX.is_file():
+            return await call_next(request)
+        provided = request.headers.get("X-API-Key") or request.headers.get("x-api-key") or ""
+        if not provided or not secrets.compare_digest(provided, self.api_key):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Missing or invalid X-API-Key"},
+            )
+        return await call_next(request)
 
 
 @asynccontextmanager
@@ -50,12 +108,18 @@ def create_app() -> FastAPI:
         version=RETAILOPS_VERSION,
         lifespan=lifespan,
     )
+    origins = _cors_origins()
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=origins,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    api_key = (os.getenv("RETAILOPS_API_KEY") or "").strip()
+    if api_key:
+        app.add_middleware(ApiKeyMiddleware, api_key=api_key)
+        logger.info("RETAILOPS_API_KEY gate enabled for non-public routes")
 
     @app.get("/health")
     def health():

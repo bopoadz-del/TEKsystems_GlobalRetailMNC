@@ -351,6 +351,27 @@ run locally. **CI is different:** the `db-integration` job in
 `RETAILOPS_TEST_DATABASE_URL` cannot be reached — see
 [CI](#ci-github-actions) below.
 
+## CI (GitHub Actions)
+
+<a id="ci-github-actions"></a>
+
+Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+
+| Job | What it enforces |
+|-----|------------------|
+| **Unit (embedding guard + auth/CORS)** | Embedding fingerprint mismatch raises; unknown embed backends raise (no silent hash/Azure fallthrough); `RETAILOPS_API_KEY` gates `/v1/*` while `/health` stays public; CORS uses `RETAILOPS_CORS_ORIGINS` allowlist. |
+| **Postgres + pgvector integration** | Service container `pgvector/pgvector:pg16`. Sets `RETAILOPS_REQUIRE_DB=1` / `CI=true` so unreachable DBs **fail** (never skip). Full `tests/retailops` suite. |
+| **E2E oracle smoke** | Migrates, loads demo fixtures, starts uvicorn, runs `scripts/oracle_smoke.py` against localhost. |
+| **Retrieval eval report** | Offline lexical / vector / hybrid RRF recall on `retail_ecom_rag_eval_v1` gold cases → `docs/retrieval_eval_report.md` + `artifacts/retrieval_eval.json`. |
+| **Frontend lint + build** | `npm ci` + `npm run build` for the business shell. |
+
+Env knobs used in CI:
+
+- `RETAILOPS_TEST_DATABASE_URL` / `RETAILOPS_DATABASE_URL`
+- `RETAILOPS_EMBED_BACKEND=hash` (deterministic tests; production default remains `fastembed`)
+- `RETAILOPS_REQUIRE_DB=1` — convert DB unavailability into a hard failure
+- Optional deploy: `RETAILOPS_API_KEY`, `RETAILOPS_CORS_ORIGINS`, `RETAILOPS_ENV=production`
+
 ## Oracle smoke (fixtures + live checklist)
 
 `scripts/oracle_smoke.py` is a stdlib-only ad-hoc runner (no third-party
@@ -460,6 +481,15 @@ See [RENDER.md](RENDER.md) for full HF load on Render and [LICENSES.md](backend/
 Trusted tenant/project/permissions are server-resolved. Retrieval and learning
 are fail-closed for isolation. Audit stores hashes/metadata — never secrets.
 Model/request arguments cannot override `tenant_id` / `project_id` / permissions.
+
+Optional shared-secret gate: set `RETAILOPS_API_KEY` and send `X-API-Key` on
+non-public routes (`/health` remains public). Browser CORS is an allowlist via
+`RETAILOPS_CORS_ORIGINS` (comma-separated); production with `RETAILOPS_ENV=production`
+does not default to `*`. This is not end-user OAuth — identity still comes from
+trusted header triples resolved server-side.
+
+Embedding space: documents stamp `embedding_model` + `embedding_dim`; ingest and
+hybrid query refuse mismatched fingerprints (`embedding_guard.py`).
 
 ## Known limitations
 

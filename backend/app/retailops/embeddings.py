@@ -76,7 +76,14 @@ class FastEmbedProvider(EmbeddingProvider):  # pragma: no cover - optional heavy
 
         # HF xet CAS intermittently 401s unauthenticated downloads on Render.
         os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
-        from fastembed import TextEmbedding
+        try:
+            from fastembed import TextEmbedding
+        except ImportError as exc:  # pragma: no cover - missing optional dep
+            raise RuntimeError(
+                "RETAILOPS_EMBED_BACKEND=fastembed requires the 'fastembed' package; "
+                "refusing silent fallback to hash/Azure. Install fastembed or set "
+                "RETAILOPS_EMBED_BACKEND=hash for tests only."
+            ) from exc
         import numpy as np
 
         self._np = np
