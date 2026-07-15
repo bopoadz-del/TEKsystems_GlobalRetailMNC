@@ -1,0 +1,194 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.base",
+  "kind": "base",
+  "display_name": "Retail Ops Base Agent",
+  "discipline": "base",
+  "extends": null,
+  "summary": "Shared retail operations cortex: trusted context, grounding rules, ActionRegistry awareness, and honesty policies. Discipline hats specialize this base \u2014 they never replace it.",
+  "activation": {
+    "mode": "auto",
+    "default_enabled": true,
+    "triggers": [
+      {
+        "type": "intent",
+        "value": "unknown"
+      }
+    ],
+    "put_off_by": [
+      "disable:retail.base"
+    ]
+  },
+  "context_sources": [
+    {
+      "source_id": "project_docs",
+      "kind": "project_documents",
+      "doc_roles": [
+        "document",
+        "policy",
+        "incident",
+        "inventory",
+        "supplier"
+      ],
+      "description": "Tenant/project documents via hybrid retrieval"
+    },
+    {
+      "source_id": "learning_advisory",
+      "kind": "learning_profiles",
+      "modules": [
+        "demand_reorder",
+        "supplier_fulfilment",
+        "promotion_effectiveness",
+        "store_exceptions"
+      ],
+      "description": "Verified-outcome learning profiles (advisory only)"
+    }
+  ],
+  "allowed_paths": [
+    "fixtures/northstar/**"
+  ],
+  "allowed_actions": [
+    "retail.export_document",
+    "retail.generate_operations_brief",
+    "retail.get_learning_summary"
+  ],
+  "handoffs": [],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [
+      {
+        "key": "confirmed_operating_assumption",
+        "description": "User-confirmed operating assumption for this project",
+        "requires_confirmation": true
+      }
+    ],
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "cross_tenant_data",
+      "unverified_claims"
+    ]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": [
+      "tenant_project_filter",
+      "reserved_context_immutable"
+    ]
+  },
+  "failure_policy": {
+    "on_missing_context": "dependency_required",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": [
+    "retail:read"
+  ],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": [
+      "base",
+      "retail",
+      "cerebrumdev-catalog"
+    ]
+  },
+  "playbook": {
+    "formulas": [
+      {
+        "id": "base.grounding_gate",
+        "name": "Grounding gate",
+        "expression": "answer_allowed = has_citations OR has_structured_evidence OR has_high_confidence_learning",
+        "inputs": [
+          "citations",
+          "structured_evidence",
+          "learning_confidence"
+        ],
+        "outputs": [
+          "answer_allowed"
+        ],
+        "implemented_by": null,
+        "unit": null,
+        "notes": "Refuse unaided figures; disclose when evidence is thin."
+      },
+      {
+        "id": "base.confidence_label",
+        "name": "Sample confidence label",
+        "expression": "confidence = high if n>=8 else medium if n>=3 else low",
+        "inputs": [
+          "sample_count"
+        ],
+        "outputs": [
+          "confidence"
+        ],
+        "implemented_by": "learning.common.confidence_label",
+        "unit": null,
+        "notes": ""
+      }
+    ],
+    "standards": [
+      {
+        "id": "base.tenant_isolation",
+        "name": "Tenant/project isolation",
+        "kind": "internal",
+        "ref": "backend/app/retailops/kit/contract/models.py",
+        "must_cite": true,
+        "description": "Never cross tenant or project boundaries in retrieval, actions, or memory."
+      },
+      {
+        "id": "base.action_registry_only",
+        "name": "Registered actions only",
+        "kind": "internal",
+        "ref": "",
+        "must_cite": true,
+        "description": "Recommend only ActionRegistry ids permitted for the trusted context."
+      },
+      {
+        "id": "base.no_llm_learning",
+        "name": "No LLM-text learning",
+        "kind": "policy",
+        "ref": "",
+        "must_cite": true,
+        "description": "Never persist LLM free text, secrets, or unverified claims to memory/learning."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "base.request_cycle",
+        "name": "Standard request cycle",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Resolve trusted context (tenant/project/permissions)",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Classify intent and activate eligible hats",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "Route to RAG, registered action, or unsupported",
+            "requires_confirmation": false
+          },
+          {
+            "step": 4,
+            "action": "Synthesize with citations / action evidence",
+            "requires_confirmation": false
+          },
+          {
+            "step": 5,
+            "action": "Persist audit record",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "every user ask",
+        "handoff_to": null,
+        "requires_confirmation": false
+      }
+    ]
+  }
+}

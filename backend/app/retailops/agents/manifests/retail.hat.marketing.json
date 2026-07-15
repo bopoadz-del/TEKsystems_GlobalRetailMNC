@@ -1,0 +1,264 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.marketing",
+  "kind": "hat",
+  "display_name": "Retail Marketing & Promo Hat",
+  "discipline": "marketing",
+  "extends": "retail.base",
+  "summary": "Campaign rules, display compliance, and promo effectiveness. Cross-checks advertising claims against compliance hat.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      {
+        "type": "intent",
+        "value": "promotion"
+      },
+      {
+        "type": "keyword",
+        "value": "campaign"
+      },
+      {
+        "type": "keyword",
+        "value": "marketing"
+      },
+      {
+        "type": "keyword",
+        "value": "promo"
+      },
+      {
+        "type": "action_id",
+        "value": "retail.check_promotion_compliance"
+      }
+    ],
+    "put_off_by": [
+      "disable:marketing",
+      "disable:retail.hat.marketing"
+    ]
+  },
+  "context_sources": [
+    {
+      "source_id": "promo_docs",
+      "kind": "project_documents",
+      "doc_roles": [
+        "promotion_rules",
+        "promotion_evidence"
+      ],
+      "description": "Promotion rules and store evidence"
+    },
+    {
+      "source_id": "promo_learning",
+      "kind": "learning_profiles",
+      "modules": [
+        "promotion_effectiveness"
+      ],
+      "description": "Verified campaign uplift / stockout impact"
+    }
+  ],
+  "allowed_paths": [
+    "fixtures/northstar/*/promotion_*"
+  ],
+  "allowed_actions": [
+    "retail.check_promotion_compliance",
+    "retail.get_learning_summary",
+    "retail.record_verified_outcome"
+  ],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.compliance",
+      "when": "advertising claim or FTC / display rule risk",
+      "carry": [
+        "campaign",
+        "claim_text"
+      ],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.inventory",
+      "when": "promotion-related stockout risk",
+      "carry": [
+        "campaign",
+        "sku",
+        "store"
+      ],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.accounting",
+      "when": "margin change from promo effectiveness",
+      "carry": [
+        "campaign",
+        "margin_change"
+      ],
+      "requires_confirmation": false
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [
+      {
+        "key": "confirmed_campaign_assumption",
+        "description": "Confirmed campaign targeting or offer assumption",
+        "requires_confirmation": true
+      }
+    ],
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "unverified_claims"
+    ]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": [
+      "rule_before_compliance_finding"
+    ]
+  },
+  "failure_policy": {
+    "on_missing_context": "dependency_required",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": [
+    "retail:read",
+    "retail:analyse"
+  ],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": [
+      "hat",
+      "marketing",
+      "promotion"
+    ]
+  },
+  "playbook": {
+    "formulas": [
+      {
+        "id": "marketing.unit_uplift",
+        "name": "Unit uplift",
+        "expression": "unit_uplift = (promoted_units - baseline_units) / max(baseline_units, epsilon)",
+        "inputs": [
+          "baseline_units",
+          "promoted_units"
+        ],
+        "outputs": [
+          "unit_uplift_percentage"
+        ],
+        "implemented_by": "learning.promotion_effectiveness",
+        "unit": "ratio",
+        "notes": ""
+      },
+      {
+        "id": "marketing.effectiveness_score",
+        "name": "Promo effectiveness score",
+        "expression": "score = clamp(unit_uplift, -1, 1) + clamp(revenue_uplift, -1, 1) + sign(margin_change) - stockout_penalty - low_compliance_penalty",
+        "inputs": [
+          "unit_uplift",
+          "revenue_uplift",
+          "margin_change",
+          "stockout_frequency",
+          "compliance_percentage"
+        ],
+        "outputs": [
+          "effectiveness_score"
+        ],
+        "implemented_by": "learning.promotion_effectiveness",
+        "unit": null,
+        "notes": ""
+      },
+      {
+        "id": "marketing.rule_coverage",
+        "name": "Promotion rule coverage",
+        "expression": "coverage = matched_keywords / max(rule_keywords, 1); compliant if coverage >= 0.5",
+        "inputs": [
+          "matched_keywords",
+          "rule_keywords"
+        ],
+        "outputs": [
+          "coverage",
+          "compliant",
+          "confidence"
+        ],
+        "implemented_by": "retail.check_promotion_compliance",
+        "unit": null,
+        "notes": ""
+      }
+    ],
+    "standards": [
+      {
+        "id": "marketing.rules_before_finding",
+        "name": "Rules before compliance finding",
+        "kind": "policy",
+        "ref": "promotion_rules",
+        "must_cite": true,
+        "description": "Never mark a campaign compliant without uploaded promotion/display rules."
+      },
+      {
+        "id": "marketing.ftc_claims",
+        "name": "Advertising claim caution",
+        "kind": "regulatory",
+        "ref": "fixtures/northstar/**",
+        "must_cite": true,
+        "description": "Advertising claims with FTC/display risk must hand off to compliance."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "marketing.compliance_check",
+        "name": "Promotion compliance check",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Load promotion rules / display standards",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Load store evidence for the campaign",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "Run retail.check_promotion_compliance",
+            "requires_confirmation": false
+          },
+          {
+            "step": 4,
+            "action": "If claim/display risk, hand off to compliance hat",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "promo compliance request",
+        "handoff_to": "retail.hat.compliance",
+        "requires_confirmation": false
+      },
+      {
+        "id": "marketing.effectiveness_review",
+        "name": "Promo effectiveness review",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Pull verified promotion_effectiveness profiles",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Report uplift, margin change, stockout impact with confidence",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "Hand off stockout risk to inventory if present",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "campaign performance question",
+        "handoff_to": "retail.hat.inventory",
+        "requires_confirmation": false
+      }
+    ]
+  }
+}

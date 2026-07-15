@@ -2,8 +2,9 @@
 
 Standalone deployable retail-operations platform for the Northstar Global
 Retail portfolio pilot. It ingests fictional retail records, answers
-document-grounded questions with citations, executes three retail deliverable
-actions with full audit evidence, and serves a business UI.
+document-grounded questions with citations, executes retail deliverable
+actions with full audit evidence, reasons across operational domains, learns
+from **verified** outcomes only, and serves a business UI.
 
 This repository is the **product**. Upstream CerebrumDev.ai / Cerebrum-Blocks
 may be used as design references; the action contract and Retail kit ship here
@@ -12,15 +13,32 @@ as a **local kit snapshot** under `backend/app/retailops/kit/`.
 ## Architecture
 
 ```
-                     ┌──────────────── Business UI (React/Vite) ───────────────┐
-                     │  Overview · Documents · Assistant · Actions · Audit      │
+User request
+  → LangGraph (classify_request → reason_retail_request)
+  → RetailOperationsReasoner → RetailExecutionPlan
+  → RAG (retrieve_context)  OR  ActionRegistry (resolve → execute)
+  → synthesize_response
+  → persist_audit
+
+Verified outcome (separate write flow)
+  → retail.record_verified_outcome (permission + confirmation)
+  → retail_learning_events (immutable)
+  → profile recalculation
+  → retail_learning_profiles (advisory)
+  → optional advisory input to future analyses
+```
+
+```
+                     ┌──────────── Business UI (React/Vite) ───────────────────┐
+                     │ Overview · Documents · Assistant · Actions · Agents · Learning · Audit │
                      └───────────────────────────┬─────────────────────────────┘
                                                   │ HTTP (X-User/Tenant/Project)
                      ┌────────────────────────────▼────────────────────────────┐
-   /v1/ask ─────────▶  LangGraph orchestrator                                   │
-                     │   classify → (retrieve | resolve) → execute → synthesize │
-                     │            → persist_audit                               │
-   /v1/actions ──────▶  Generic ActionRegistry + execute_action (from kit)      │
+   /v1/ask ─────────▶  LangGraph + RetailOperationsReasoner                     │
+   /v1/actions ──────▶  Generic ActionRegistry + execute_action                 │
+   /v1/agents ───────▶  Discipline base+hat catalog (composed manifests)        │
+   /v1/exports ──────▶  PDF / DOCX / XLSX generation (streamed download)         │
+   /v1/learning/* ───▶  Advisory learning read APIs                             │
    /v1/documents ────▶  Ingestion (PDF/DOCX/TXT/MD/CSV/XLSX)                     │
    /v1/audit ────────▶  Audit (action_runs)                                     │
                      └───────┬───────────────────────────────┬─────────────────┘
@@ -28,27 +46,173 @@ as a **local kit snapshot** under `backend/app/retailops/kit/`.
                      ┌───────▼─────────┐             ┌────────▼─────────┐
                      │ PostgreSQL 16   │             │ Azure OpenAI /   │
                      │ + pgvector      │             │ OpenAI-compat /  │
-                     │ (vector+tsvector)│            │ deterministic fake│
+                     │ + learning msgs │             │ deterministic fake│
                      └─────────────────┘             └──────────────────┘
 ```
 
-## Database & retrieval
+## Retail Operations Reasoning Layer
 
-- **Store:** PostgreSQL 16 + pgvector. Tables: `tenants`, `users`, `projects`,
-  `documents`, `document_chunks`, `action_runs`, `conversations`, `messages`.
-- Hybrid retrieval: pgvector cosine + Postgres `ts_rank_cd` fused with RRF.
-  Tenant + project filters apply before fusion (fail-closed).
+`RetailOperationsReasoner` is deterministic. It does **not** call action
+handlers or replace LangGraph. It emits an auditable `RetailExecutionPlan`
+(primary intent, confidence, route, recommended registered actions, related
+domains, dependencies, evidence requirements, confirmation flag, notes,
+active discipline hats, and handoff tips).
+
+- Factual questions stay on RAG (anti-hijack).
+- Explicit `action:<id>` addressing is supported.
+- Only actions present in `ActionRegistry` and permitted for the trusted
+  context may be recommended. Trust-scope keys are never taken from arguments.
+
+Cross-domain expansion is data-driven in
+`backend/app/retailops/reasoning/domain_map.py`.
+
+## Discipline Agents (base + hats)
+
+Vendor-neutral manifests under `backend/app/retailops/agents/` encode the
+product contract for a retail mogul’s discipline agents:
+
+| Product need | Manifest field |
+| --- | --- |
+| Triggered / put off by user | `activation` (+ `put_off_by` / `disabled_agents`) |
+| Knowledge boundary | `context_sources` + `allowed_paths` |
+| Teachable / confirmed decisions | `memory.save` (always confirmation-gated) |
+| Cross-discipline tips | `handoffs` |
+| Formulas / standards / procedures | `playbook` |
+| Honesty / grounding | `verification` + `failure_policy` |
+| CerebrumDev.ai catalog | vendor-neutral JSON + `manifest.schema.json` |
+
+Every discipline hat ships a `playbook` with:
+
+- **formulas** — named expressions (bound to learning modules / actions when implemented)
+- **standards** — policy, regulatory, KPI, or safety norms (`must_cite` where required)
+- **procedures** — ordered steps, optional confirmation + handoff targets
+
+Composed hat views inherit base playbook entries and overlay hat-specific ones.
+Reasoner plans expose `playbook_refs` for the primary active hat.
+
+Hats specialize `retail.base`. They annotate `RetailExecutionPlan` with
+`active_agent_ids`, `primary_agent_id`, and `handoff_tips`. Keyword/imperative
+action matches are **filtered** by the primary hat’s `allowed_actions`. Explicit
+`action:<id>` addressing still wins when permitted. Playbook formulas with
+`implemented_by` are disclosed on action outputs as `applied_formulas`.
+
+Confirmed hat memory is now writable:
+
+```
+GET  /v1/agents/memory
+POST /v1/agents/memory  { agent_id, key, value, confirm: true }
+```
+
+Keys must match the hat’s `memory.save` declarations. LLM free text / secrets /
+PII keys are refused.
+
+```
+GET /v1/agents
+GET /v1/agents/{agent_id}
+POST /v1/ask  { "question": "...", "disabled_agents": ["disable:roster"] }
+```
+
+## LLM provider (OpenAI)
+
+Production default is **OpenAI** (`gpt-4o-mini`):
+
+| Env | Value |
+| --- | --- |
+| `RETAILOPS_LLM_PROVIDER` | `openai` |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` |
+| `RETAILOPS_LLM_MODEL` | `gpt-4o-mini` |
+| `OPENAI_API_KEY` | **Dashboard secret** (`sync: false` — never commit) |
+
+Ollama Cloud remains available via `RETAILOPS_LLM_PROVIDER=ollama` + `OLLAMA_API_KEY`.
+Without any key, `auto` falls back to the deterministic `FakeProvider` (tests/local).
+
+## Document export (PDF / DOCX / XLSX)
+
+The platform both **ingests** and **generates** office documents:
+
+| Format | Ingest | Generate |
+| --- | --- | --- |
+| PDF | yes | yes (`retail.export_document`) |
+| Word DOCX | yes | yes |
+| Excel XLSX | yes | yes |
+
+Generation is ActionRegistry-backed (no second runtime). Artefacts are built
+in memory and returned as `document_base64` (Render disk is ephemeral) or
+streamed via `POST /v1/exports`.
+
+Document kinds: `operations_brief`, `inventory_risk`, `learning_summary`, `custom`.
+
+```
+# JSON + base64
+curl -s $H -X POST localhost:8000/v1/actions/retail.export_document/execute \
+  -d '{"arguments":{"format":"pdf","document_kind":"operations_brief","period":"daily"},"auto_context":true}'
+
+# Stream download
+curl -s $H -X POST localhost:8000/v1/exports \
+  -d '{"format":"xlsx","document_kind":"inventory_risk"}' -o inventory-risk.xlsx
+```
+
+## Retail Outcome Learning Layer
+
+Deterministic modules (no ML frameworks; never train on LLM text):
+
+1. `DemandReorderCalibrator`
+2. `SupplierFulfilmentLearner`
+3. `PromotionEffectivenessLearner`
+4. `StoreExceptionPatternDetector`
+
+### Verified-only safety model
+
+Learning happens only through authorised verified outcome capture:
+
+```
+verified outcome submitted
+  → permission checked (retail:learning_write)
+  → confirmation checked
+  → payload validated
+  → immutable retail_learning_events row
+  → affected profile recalculated
+  → action audit persisted
+  → ActionResult returned
+```
+
+Never learned from: chat, RAG answers, LLM synthesis, failed/unsupported
+actions, unverified uploads, or inferred values.
+
+### PostgreSQL learning schema
+
+- `retail_learning_events` — immutable observations; unique
+  `(tenant_id, project_id, deduplication_key)`
+- `retail_learning_profiles` — advisory knowledge; unique
+  `(tenant_id, project_id, module, entity_type, entity_key)`
+
+Tenant/project isolation is mandatory. No cross-tenant aggregation.
+
+Confidence bands: **low** `<3` samples, **medium** `3–7`, **high** `≥8`.
 
 ## Actions (local kit snapshot)
 
 Namespaced deliverables — adding one requires **no** router change:
 
 - `retail.generate_operations_brief`
-- `retail.analyse_inventory_risk`
+- `retail.analyse_inventory_risk` (may consume high-confidence demand profiles as advisory)
 - `retail.check_promotion_compliance`
+- `retail.record_verified_outcome` (write; confirmation required)
+- `retail.get_learning_summary` (read)
+- `retail.recommend_reorder_parameters` (read; advisory)
 
-Kit id exposed on `/health` as `kit_snapshot` / legacy `blocks_commit`:
-`local-retail-kit-1.1.0`.
+**Advisory-not-autonomous rule:** learned profiles never silently overwrite
+source reorder settings. Inventory analysis discloses original / learned /
+applied values; only **high** confidence may alter applied thresholds.
+
+Kit version: `1.3.0`.
+
+## Database & retrieval
+
+- **Store:** PostgreSQL 16 + pgvector.
+- Tables include core ops tables plus learning events/profiles.
+- Hybrid retrieval: pgvector cosine + Postgres `ts_rank_cd` fused with RRF.
+  Tenant + project filters apply before fusion (fail-closed).
 
 ## Local run (Docker — preferred)
 
@@ -58,7 +222,7 @@ docker compose up --build
 # App: http://localhost:8000/   Health: http://localhost:8000/health
 ```
 
-Load fictional Northstar fixtures (Riyadh + Melbourne):
+Load fictional Northstar fixtures (documents + verified learning outcomes):
 
 ```bash
 docker compose exec app python -c "
@@ -81,43 +245,84 @@ cd backend && uvicorn app.retailops.app_factory:app --host 0.0.0.0 --port 8000
 ## Tests
 
 ```bash
-# Requires Postgres 16 + pgvector with a retailops_test database (or set URL).
 export RETAILOPS_TEST_DATABASE_URL="postgresql+psycopg://retailops:retailops@localhost:5432/retailops_test"
 pip install -r backend/app/retailops/deploy/requirements.txt pytest httpx
 cd backend && PYTHONPATH=. pytest tests/retailops -q
 ```
 
-If the test database is unreachable, tests skip rather than fail hard.
-
 ## Render
 
-See [RENDER.md](RENDER.md). Blueprint: root `render.yaml` (same Dockerfile as local).
-
-Live service (when deployed): https://retailops-3ayp.onrender.com
+See [RENDER.md](RENDER.md). Blueprint: root `render.yaml`.
 
 ## API examples
 
 ```bash
 H='-H X-User-Id:u_ops_manager -H X-Tenant-Id:northstar -H X-Project-Id:<PID> -H Content-Type:application/json'
-curl -s $H localhost:8000/v1/actions
+
+# Reasoned ask (returns execution_plan)
 curl -s $H -d '{"question":"What is the escalation process for a stock discrepancy?"}' localhost:8000/v1/ask
-curl -s $H -d '{"arguments":{"period":"daily"}}' localhost:8000/v1/actions/retail.generate_operations_brief/execute
-curl -s $H localhost:8000/v1/audit
+
+# Advisory learning summary
+curl -s $H localhost:8000/v1/learning/summary
+curl -s $H localhost:8000/v1/learning/profiles
+
+# Recommend reorder parameters (advisory)
+curl -s $H -d '{"arguments":{"sku":"BEV-2201","store":"Riyadh Olaya","current_reorder_point":20}}' \
+  localhost:8000/v1/actions/retail.recommend_reorder_parameters/execute
+
+# Record verified outcome (requires confirmation + retail:learning_write)
+curl -s $H -d '{
+  "confirm": true,
+  "arguments": {
+    "module": "demand_reorder",
+    "deduplication_key": "demo-bev-week-9",
+    "payload": {
+      "sku":"BEV-2201","store":"Riyadh Olaya",
+      "forecast_quantity":100,"actual_sales_quantity":118,
+      "current_reorder_point":20,"safety_stock":10,
+      "stockout_occurrence":false,
+      "period_start":"2024-03-01","period_end":"2024-03-07"
+    }
+  }
+}' localhost:8000/v1/actions/retail.record_verified_outcome/execute
+```
+
+### Example learning profile shape
+
+```json
+{
+  "module": "demand_reorder",
+  "entity_key": "BEV-2201|Riyadh Olaya",
+  "sample_count": 8,
+  "confidence": "high",
+  "metrics": {
+    "actual_to_forecast_ratio": 1.12,
+    "current_reorder_point": 20,
+    "recommended_reorder_point": 22.4,
+    "advisory_assumptions": ["advisory_only_does_not_overwrite_source_systems"]
+  },
+  "advisory_only": true
+}
 ```
 
 ## Fixture data
 
 `backend/app/retailops/fixtures/northstar/` — fictional **Northstar Global Retail**
-for *Northstar Riyadh Region* and *Northstar Melbourne Region*. No real client
-or employer data.
+for *Northstar Riyadh Region* and *Northstar Melbourne Region*.
+
+Learning fixtures in `fixtures/northstar/learning/verified_outcomes.json`
+demonstrate low / medium / high demand confidence, two suppliers, two
+campaigns, and repeated store exceptions. Idempotent via `deduplication_key`.
 
 ## Security
 
-Trusted tenant/project/permissions are server-resolved. Retrieval is fail-closed
-for isolation. Audit stores hashes/metadata — never secrets.
+Trusted tenant/project/permissions are server-resolved. Retrieval and learning
+are fail-closed for isolation. Audit stores hashes/metadata — never secrets.
+Model/request arguments cannot override `tenant_id` / `project_id` / permissions.
 
 ## Known limitations
 
-- Default embeddings are deterministic feature-hash (`RETAILOPS_EMBED_BACKEND=hash`).
-- Fake LLM provider is credential-free; set Azure/OpenAI for fluent synthesis.
-- SPA is served only when `frontend/dist` is present in the image (Docker build).
+- Learning is deterministic advisory analytics, not neural forecasting.
+- No autonomous ordering or supplier selection.
+- No cross-tenant global learning.
+- Write form for verified outcomes is API-first; UI Learning tab is read-only.

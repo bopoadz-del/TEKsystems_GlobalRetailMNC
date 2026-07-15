@@ -25,7 +25,10 @@ services:
     environment:
       RETAILOPS_DATABASE_URL: postgresql+psycopg://retailops:retailops@db:5432/retailops
       RETAILOPS_EMBED_BACKEND: hash
-      RETAILOPS_LLM_PROVIDER: fake
+      RETAILOPS_LLM_PROVIDER: ${RETAILOPS_LLM_PROVIDER:-fake}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://ollama.com/v1}
+      RETAILOPS_LLM_MODEL: ${RETAILOPS_LLM_MODEL:-ministral-3:8b}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
       PORT: "8000"
     ports:
       - "8000:8000"

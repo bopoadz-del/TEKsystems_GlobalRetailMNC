@@ -157,6 +157,110 @@ PROMOTION_COMPLIANCE_OUTPUT = {
     ],
 }
 
+# ---------------------------------------------------------------------------
+# D. Learning actions
+# ---------------------------------------------------------------------------
+
+RECORD_VERIFIED_OUTCOME_INPUT = {
+    "type": "object",
+    "properties": {
+        "module": {
+            "type": "string",
+            "enum": [
+                "demand_reorder",
+                "supplier_fulfilment",
+                "promotion_effectiveness",
+                "store_exceptions",
+            ],
+        },
+        "payload": {"type": "object"},
+        "deduplication_key": {"type": "string"},
+        "event_type": {"type": "string"},
+        "source_document_id": {"type": "string"},
+        "source_action_run_id": {"type": "string"},
+        "source_reference": {"type": "string"},
+        "verification_status": {"type": "string"},
+    },
+    "required": ["module", "payload", "deduplication_key"],
+}
+
+RECORD_VERIFIED_OUTCOME_OUTPUT = {
+    "type": "object",
+    "properties": {
+        "event_id": {"type": "string"},
+        "module": {"type": "string"},
+        "profile_key": {"type": "string"},
+        "profile_version": {"type": "integer"},
+        "sample_count": {"type": "integer"},
+        "confidence": {"type": "string"},
+        "changed_metrics": {"type": "object"},
+        "warnings": {"type": "array", "items": {"type": "string"}},
+        "evidence": {"type": "object"},
+        "idempotent": {"type": "boolean"},
+        "advisory_only": {"type": "boolean"},
+    },
+}
+
+GET_LEARNING_SUMMARY_INPUT = {
+    "type": "object",
+    "properties": {
+        "module": {"type": "string"},
+        "entity_type": {"type": "string"},
+        "entity_key": {"type": "string"},
+        "limit": {"type": "integer"},
+        "offset": {"type": "integer"},
+    },
+}
+
+GET_LEARNING_SUMMARY_OUTPUT = {
+    "type": "object",
+    "properties": {
+        "profiles": {"type": "array", "items": {"type": "object"}},
+        "count": {"type": "integer"},
+        "advisory_only": {"type": "boolean"},
+    },
+    "required": ["profiles", "count", "advisory_only"],
+}
+
+RECOMMEND_REORDER_INPUT = {
+    "type": "object",
+    "properties": {
+        "sku": {"type": "string"},
+        "store": {"type": "string"},
+        "region": {"type": "string"},
+        "current_reorder_point": {"type": "number"},
+        "current_safety_stock": {"type": "number"},
+    },
+    "required": ["sku"],
+}
+
+RECOMMEND_REORDER_OUTPUT = {
+    "type": "object",
+    "properties": {
+        "status": {"type": "string"},
+        "sku": {"type": "string"},
+        "store": {"type": "string"},
+        "region": {"type": "string"},
+        "current_reorder_point": {"type": "number"},
+        "recommended_reorder_point": {"type": "number"},
+        "learned_reorder_adjustment": {"type": "number"},
+        "current_safety_stock": {"type": "number"},
+        "recommended_safety_stock": {"type": "number"},
+        "sample_count": {"type": "integer"},
+        "confidence": {"type": "string"},
+        "source_period_start": {"type": "string"},
+        "source_period_end": {"type": "string"},
+        "assumptions": {"type": "array", "items": {"type": "string"}},
+        "advisory_only": {"type": "boolean"},
+    },
+}
+
+# Enhance inventory risk output (advisory learning disclosure is optional).
+INVENTORY_RISK_OUTPUT["properties"]["learning_adjustments"] = {
+    "type": "array",
+    "items": {"type": "object"},
+}
+
 
 # ---------------------------------------------------------------------------
 # Inventory field normalization
@@ -234,3 +338,83 @@ def present_fields(rows: List[Dict[str, Any]]) -> set:
     for row in rows:
         fields.update(row.keys())
     return fields
+
+
+# ---------------------------------------------------------------------------
+# G. export_document
+# ---------------------------------------------------------------------------
+
+EXPORT_DOCUMENT_INPUT = {
+    "type": "object",
+    "properties": {
+        "format": {"type": "string", "enum": ["pdf", "docx", "xlsx"]},
+        "document_kind": {
+            "type": "string",
+            "enum": [
+                "custom",
+                "operations_brief",
+                "inventory_risk",
+                "learning_summary",
+            ],
+        },
+        "title": {"type": "string"},
+        "subtitle": {"type": "string"},
+        "source_output": {"type": "object"},
+        "sections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "heading": {"type": "string"},
+                    "paragraphs": {"type": "array", "items": {"type": "string"}},
+                    "bullets": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+        },
+        "table": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "headers": {"type": "array", "items": {"type": "string"}},
+                "rows": {
+                    "type": "array",
+                    "items": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+        },
+        "tables": {"type": "array", "items": {"type": "object"}},
+        "include_base64": {"type": "boolean"},
+        "period": {"type": "string", "enum": ["daily", "weekly"]},
+        "store": {"type": "string"},
+        "records": {"type": "array", "items": _RECORD_SCHEMA},
+        "rows": {"type": "array", "items": {"type": "object"}},
+        "module": {"type": "string"},
+        "profiles": {"type": "array", "items": {"type": "object"}},
+    },
+    "required": ["format", "document_kind"],
+}
+
+EXPORT_DOCUMENT_OUTPUT = {
+    "type": "object",
+    "properties": {
+        "filename": {"type": "string"},
+        "content_type": {"type": "string"},
+        "format": {"type": "string"},
+        "byte_size": {"type": "integer"},
+        "sha256": {"type": "string"},
+        "generated_at": {"type": "string"},
+        "document_base64": {"type": "string"},
+        "document_kind": {"type": "string"},
+        "title": {"type": "string"},
+        "advisory_only": {"type": "boolean"},
+    },
+    "required": [
+        "filename",
+        "content_type",
+        "format",
+        "byte_size",
+        "sha256",
+        "document_kind",
+        "title",
+    ],
+}

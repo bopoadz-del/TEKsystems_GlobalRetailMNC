@@ -1,0 +1,274 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.inventory",
+  "kind": "hat",
+  "display_name": "Inventory & Replenishment Hat",
+  "discipline": "inventory",
+  "extends": "retail.base",
+  "summary": "Stock risk, reorder advice, and chilled/dry inventory exceptions. Uses verified demand learning as advisory input only.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      {
+        "type": "intent",
+        "value": "inventory"
+      },
+      {
+        "type": "keyword",
+        "value": "reorder"
+      },
+      {
+        "type": "keyword",
+        "value": "stockout"
+      },
+      {
+        "type": "action_id",
+        "value": "retail.analyse_inventory_risk"
+      }
+    ],
+    "put_off_by": [
+      "disable:inventory",
+      "disable:retail.hat.inventory"
+    ]
+  },
+  "context_sources": [
+    {
+      "source_id": "inventory_docs",
+      "kind": "project_documents",
+      "doc_roles": [
+        "inventory",
+        "policy"
+      ],
+      "description": "Inventory sheets and stock policies"
+    },
+    {
+      "source_id": "demand_learning",
+      "kind": "learning_profiles",
+      "modules": [
+        "demand_reorder",
+        "store_exceptions"
+      ],
+      "description": "Demand calibration + exception patterns"
+    }
+  ],
+  "allowed_paths": [
+    "fixtures/northstar/*/inventory.*"
+  ],
+  "allowed_actions": [
+    "retail.analyse_inventory_risk",
+    "retail.export_document",
+    "retail.get_learning_summary",
+    "retail.recommend_reorder_parameters",
+    "retail.record_verified_outcome"
+  ],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.supplier",
+      "when": "stockout linked to late delivery or fill-rate risk",
+      "carry": [
+        "sku",
+        "store",
+        "supplier_signal"
+      ],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.accounting",
+      "when": "inventory valuation or shrink P&L impact requested",
+      "carry": [
+        "sku",
+        "unit_cost",
+        "variance"
+      ],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.workforce_roster",
+      "when": "count variance requires additional labour cover",
+      "carry": [
+        "store",
+        "shift_window"
+      ],
+      "requires_confirmation": true
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [
+      {
+        "key": "confirmed_reorder_override",
+        "description": "Manager-confirmed reorder/safety-stock override (never auto-applied)",
+        "requires_confirmation": true
+      }
+    ],
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "unverified_claims"
+    ]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": true,
+    "refuse_unaided_figures": true,
+    "checks": [
+      "high_confidence_before_apply",
+      "advisory_disclosure"
+    ]
+  },
+  "failure_policy": {
+    "on_missing_context": "dependency_required",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": [
+    "retail:read",
+    "retail:analyse"
+  ],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": [
+      "hat",
+      "inventory",
+      "replenishment"
+    ]
+  },
+  "playbook": {
+    "formulas": [
+      {
+        "id": "inventory.recommended_reorder_point",
+        "name": "Recommended reorder point",
+        "expression": "recommended_rop = current_rop * clamp(avg(actual/forecast), 0.5, 2.0)",
+        "inputs": [
+          "current_reorder_point",
+          "actual_to_forecast_ratio"
+        ],
+        "outputs": [
+          "recommended_reorder_point"
+        ],
+        "implemented_by": "learning.demand_reorder",
+        "unit": null,
+        "notes": "Advisory only; high confidence required before applied thresholds change."
+      },
+      {
+        "id": "inventory.safety_stock_adjust",
+        "name": "Safety stock adequacy adjust",
+        "expression": "if stockout_frequency >= 0.25 then recommended_ss = current_ss * 1.20 else recommended_ss = current_ss",
+        "inputs": [
+          "current_safety_stock",
+          "stockout_frequency"
+        ],
+        "outputs": [
+          "recommended_safety_stock",
+          "safety_stock_adequacy"
+        ],
+        "implemented_by": "learning.demand_reorder",
+        "unit": null,
+        "notes": ""
+      },
+      {
+        "id": "inventory.days_of_cover",
+        "name": "Days of cover",
+        "expression": "days_of_cover = on_hand / max(avg_daily_demand, epsilon)",
+        "inputs": [
+          "on_hand",
+          "avg_daily_demand"
+        ],
+        "outputs": [
+          "days_of_cover"
+        ],
+        "implemented_by": "retail.analyse_inventory_risk",
+        "unit": "days",
+        "notes": ""
+      }
+    ],
+    "standards": [
+      {
+        "id": "inventory.source_of_truth",
+        "name": "POS/inventory rows are authoritative",
+        "kind": "kpi",
+        "ref": "fixtures/northstar/*/inventory.*",
+        "must_cite": true,
+        "description": "Learning profiles never silently overwrite source system stock figures."
+      },
+      {
+        "id": "inventory.high_confidence_gate",
+        "name": "High-confidence before apply",
+        "kind": "internal",
+        "ref": "",
+        "must_cite": true,
+        "description": "Only high-confidence demand profiles may alter applied reorder thresholds."
+      },
+      {
+        "id": "inventory.advisory_disclosure",
+        "name": "Advisory disclosure",
+        "kind": "policy",
+        "ref": "",
+        "must_cite": true,
+        "description": "Always disclose that reorder advice is advisory unless confirmed."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "inventory.stock_risk_review",
+        "name": "Inventory risk review",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Gather structured inventory rows for the store/SKU set",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Run retail.analyse_inventory_risk",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "Overlay high-confidence demand learning if present",
+            "requires_confirmation": false
+          },
+          {
+            "step": 4,
+            "action": "Disclose risks and recommended parameters",
+            "requires_confirmation": false
+          },
+          {
+            "step": 5,
+            "action": "If manager confirms override, save confirmed_reorder_override",
+            "requires_confirmation": true
+          }
+        ],
+        "trigger": "stockout, overstock, or reorder request",
+        "handoff_to": "retail.hat.supplier",
+        "requires_confirmation": false
+      },
+      {
+        "id": "inventory.count_variance",
+        "name": "Count variance follow-up",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Record variance evidence from inventory documents",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Classify as discrepancy vs shrink vs spoilage",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "Hand off labour cover need to workforce roster if surge count needed",
+            "requires_confirmation": true
+          }
+        ],
+        "trigger": "inventory count variance",
+        "handoff_to": "retail.hat.workforce_roster",
+        "requires_confirmation": false
+      }
+    ]
+  }
+}

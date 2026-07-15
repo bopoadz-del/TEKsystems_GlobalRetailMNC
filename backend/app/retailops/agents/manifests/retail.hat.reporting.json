@@ -1,0 +1,244 @@
+{
+  "manifest_version": "1.0.0",
+  "agent_id": "retail.hat.reporting",
+  "kind": "hat",
+  "display_name": "Executive Reporting Hat",
+  "discipline": "reporting",
+  "extends": "retail.base",
+  "summary": "Cross-discipline rollups and learning overviews for retail leadership. Prefers action/learning outputs over invented KPIs.",
+  "activation": {
+    "mode": "hybrid",
+    "default_enabled": true,
+    "triggers": [
+      {
+        "type": "intent",
+        "value": "reporting"
+      },
+      {
+        "type": "keyword",
+        "value": "kpi"
+      },
+      {
+        "type": "keyword",
+        "value": "dashboard"
+      },
+      {
+        "type": "keyword",
+        "value": "executive summary"
+      },
+      {
+        "type": "keyword",
+        "value": "learning summary"
+      },
+      {
+        "type": "action_id",
+        "value": "retail.get_learning_summary"
+      }
+    ],
+    "put_off_by": [
+      "disable:reporting",
+      "disable:retail.hat.reporting"
+    ]
+  },
+  "context_sources": [
+    {
+      "source_id": "learning_rollups",
+      "kind": "learning_profiles",
+      "modules": [
+        "demand_reorder",
+        "supplier_fulfilment",
+        "promotion_effectiveness",
+        "store_exceptions"
+      ],
+      "description": "Verified learning profiles for rollups"
+    }
+  ],
+  "allowed_paths": [
+    "fixtures/northstar/**"
+  ],
+  "allowed_actions": [
+    "retail.export_document",
+    "retail.generate_operations_brief",
+    "retail.get_learning_summary"
+  ],
+  "handoffs": [
+    {
+      "to_agent_id": "retail.hat.inventory",
+      "when": "summary depends on stock risk detail",
+      "carry": [
+        "sku",
+        "store"
+      ],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.accounting",
+      "when": "summary depends on margin or cost detail",
+      "carry": [
+        "sku",
+        "store"
+      ],
+      "requires_confirmation": false
+    },
+    {
+      "to_agent_id": "retail.hat.workforce_roster",
+      "when": "summary depends on labor coverage",
+      "carry": [
+        "store"
+      ],
+      "requires_confirmation": false
+    }
+  ],
+  "memory": {
+    "scope": "tenant_project",
+    "save": [],
+    "never_persist": [
+      "llm_raw_text",
+      "secrets",
+      "unverified_claims"
+    ]
+  },
+  "verification": {
+    "grounding": "documents_or_learning_only",
+    "cite_required": false,
+    "refuse_unaided_figures": true,
+    "checks": [
+      "no_invented_kpis"
+    ]
+  },
+  "failure_policy": {
+    "on_missing_context": "dependency_required",
+    "on_unregistered_action": "unsupported",
+    "on_low_confidence": "disclose_only"
+  },
+  "permissions": [
+    "retail:read"
+  ],
+  "catalog": {
+    "vendor_neutral": true,
+    "product": "TEKsystems RetailOps",
+    "tags": [
+      "hat",
+      "reporting",
+      "executive",
+      "rollup"
+    ]
+  },
+  "playbook": {
+    "formulas": [
+      {
+        "id": "reporting.profile_roll_count",
+        "name": "Learning profile roll count",
+        "expression": "profile_count = count(learning_profiles filtered by module)",
+        "inputs": [
+          "learning_profiles",
+          "module"
+        ],
+        "outputs": [
+          "profile_count"
+        ],
+        "implemented_by": "retail.get_learning_summary",
+        "unit": null,
+        "notes": ""
+      },
+      {
+        "id": "reporting.confidence_mix",
+        "name": "Confidence mix",
+        "expression": "confidence_mix = {high: n_high/n, medium: n_medium/n, low: n_low/n}",
+        "inputs": [
+          "learning_profiles"
+        ],
+        "outputs": [
+          "confidence_mix"
+        ],
+        "implemented_by": "retail.get_learning_summary",
+        "unit": null,
+        "notes": "No invented KPIs \u2014 only rollups of evidenced profiles/action outputs."
+      },
+      {
+        "id": "reporting.export_bytes",
+        "name": "Export artefact checksum",
+        "expression": "sha256 = SHA256(document_bytes); downloadable = base64(document_bytes)",
+        "inputs": [
+          "document_bytes"
+        ],
+        "outputs": [
+          "sha256",
+          "document_base64",
+          "filename"
+        ],
+        "implemented_by": "retail.export_document",
+        "notes": "Supports pdf, docx, xlsx. Ephemeral \u2014 returned to client, not stored on disk.",
+        "unit": null
+      }
+    ],
+    "standards": [
+      {
+        "id": "reporting.no_invented_kpis",
+        "name": "No invented KPIs",
+        "kind": "kpi",
+        "ref": "",
+        "must_cite": true,
+        "description": "Executive claims must come from action outputs or cited domains."
+      },
+      {
+        "id": "reporting.cross_hat_detail",
+        "name": "Cross-hat detail on demand",
+        "kind": "internal",
+        "ref": "",
+        "must_cite": true,
+        "description": "When rollup depends on stock, margin, or labour detail, hand off to the owning hat."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "reporting.executive_rollup",
+        "name": "Executive rollup",
+        "steps": [
+          {
+            "step": 1,
+            "action": "Pull learning summary / ops brief outputs",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Compose rollup with confidence mix",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "Attach handoff tips for inventory, accounting, and roster detail as needed",
+            "requires_confirmation": false
+          }
+        ],
+        "trigger": "KPI, dashboard, executive summary, learning summary",
+        "handoff_to": null,
+        "requires_confirmation": false
+      },
+      {
+        "id": "reporting.export_rollup",
+        "name": "Export executive artefact",
+        "trigger": "export pdf / docx / excel request",
+        "handoff_to": null,
+        "requires_confirmation": false,
+        "steps": [
+          {
+            "step": 1,
+            "action": "Choose document_kind (operations_brief, inventory_risk, learning_summary, or custom)",
+            "requires_confirmation": false
+          },
+          {
+            "step": 2,
+            "action": "Run retail.export_document with format pdf|docx|xlsx",
+            "requires_confirmation": false
+          },
+          {
+            "step": 3,
+            "action": "Return filename, sha256, and document_base64 (or stream via POST /v1/exports)",
+            "requires_confirmation": false
+          }
+        ]
+      }
+    ]
+  }
+}

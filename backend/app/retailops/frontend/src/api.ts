@@ -56,6 +56,70 @@ export interface ActionResult {
   error_message?: string;
 }
 
+export interface LearningProfile {
+  id: string;
+  module: string;
+  entity_type: string;
+  entity_key: string;
+  metrics: Record<string, unknown>;
+  sample_count: number;
+  confidence: string;
+  source_period_start?: string | null;
+  source_period_end?: string | null;
+  version: number;
+  advisory_only?: boolean;
+}
+
+export interface AgentManifest {
+  agent_id: string;
+  kind: string;
+  display_name: string;
+  discipline: string;
+  extends?: string | null;
+  summary?: string;
+  activation?: {
+    mode?: string;
+    default_enabled?: boolean;
+    triggers?: { type: string; value: string }[];
+    put_off_by?: string[];
+  };
+  handoffs?: { to_agent_id: string; when: string; carry?: string[] }[];
+  memory?: Record<string, unknown>;
+  verification?: Record<string, unknown>;
+  failure_policy?: Record<string, unknown>;
+  playbook?: {
+    formulas?: {
+      id: string;
+      name: string;
+      expression: string;
+      inputs?: string[];
+      outputs?: string[];
+      implemented_by?: string | null;
+      unit?: string | null;
+      notes?: string;
+    }[];
+    standards?: {
+      id: string;
+      name: string;
+      kind: string;
+      ref?: string;
+      must_cite?: boolean;
+      description?: string;
+    }[];
+    procedures?: {
+      id: string;
+      name: string;
+      trigger?: string;
+      handoff_to?: string | null;
+      requires_confirmation?: boolean;
+      steps?: { step: number; action: string; requires_confirmation?: boolean }[];
+    }[];
+  };
+  allowed_actions?: string[];
+  composed_from?: string[];
+  [key: string]: unknown;
+}
+
 export const api = {
   overview: (p: Principal) => req<{ document_count: number; recent_actions: { action_id: string; status: string; started_at: string }[]; system_health: Record<string, unknown> }>("/v1/overview", p),
   documents: (p: Principal) => req<{ documents: { document_id: string; filename: string; status: string; chunk_count: number; doc_role?: string; error?: string }[] }>("/v1/documents", p),
@@ -64,10 +128,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ filename, text, doc_role }),
     }),
-  ask: (p: Principal, question: string) =>
-    req<{ route: string; answer: string; citations: Citation[]; action_result: ActionResult | null }>("/v1/ask", p, {
+  ask: (p: Principal, question: string, disabledAgents: string[] = []) =>
+    req<{ route: string; answer: string; citations: Citation[]; action_result: ActionResult | null; execution_plan?: Record<string, unknown> }>("/v1/ask", p, {
       method: "POST",
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, disabled_agents: disabledAgents }),
     }),
   actions: (p: Principal) => req<{ actions: ActionSpec[] }>("/v1/actions", p),
   execute: (p: Principal, actionId: string, args: Record<string, unknown>, confirm: boolean) =>
@@ -75,5 +139,46 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ arguments: args, auto_context: true, confirm }),
     }),
+  exportDocument: async (
+    p: Principal,
+    body: Record<string, unknown>,
+  ): Promise<Blob> => {
+    const res = await fetch(`${BASE}/v1/exports`, {
+      method: "POST",
+      headers: { ...headers(p) },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      throw new Error(`${res.status}: ${await res.text()}`);
+    }
+    return res.blob();
+  },
   audit: (p: Principal) => req<{ runs: { request_id: string; action_id: string; user_id: string; status: string; started_at: string; duration_ms: number; evidence_count: number }[] }>("/v1/audit", p),
+  learningSummary: (p: Principal, module?: string) =>
+    req<{ advisory_only: boolean; count: number; profiles: LearningProfile[] }>(
+      `/v1/learning/summary${module ? `?module=${encodeURIComponent(module)}` : ""}`,
+      p,
+    ),
+  learningProfiles: (p: Principal) =>
+    req<{ advisory_only: boolean; count: number; profiles: LearningProfile[] }>("/v1/learning/profiles", p),
+  agents: (p: Principal, composed = true) =>
+    req<{ vendor_neutral: boolean; bases: AgentManifest[]; hats: AgentManifest[]; hat_count: number }>(
+      `/v1/agents?composed=${composed ? "true" : "false"}`,
+      p,
+    ),
+  agent: (p: Principal, agentId: string) =>
+    req<AgentManifest>(`/v1/agents/${encodeURIComponent(agentId)}`, p),
+  listMemory: (p: Principal, agentId?: string) =>
+    req<{ advisory_only: boolean; count: number; entries: Record<string, unknown>[] }>(
+      `/v1/agents/memory${agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ""}`,
+      p,
+    ),
+  saveMemory: (
+    p: Principal,
+    body: { agent_id: string; key: string; value: Record<string, unknown>; confirm: boolean },
+  ) =>
+    req<{ status: string; entry: Record<string, unknown> }>("/v1/agents/memory", p, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };
