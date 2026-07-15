@@ -159,18 +159,78 @@ This is an accepted, honestly-documented limitation, not a defect.
 
 ## Phase 8 — deploy certification
 
-Filled in after the certification PR is opened, CI is green, and the PR is merged to `main`.
-
-- PR: _pending_
-- CI run: _pending_
-- Merge commit: _pending_
-- Render deploy trigger + resulting live commit: _pending_
-- `scripts/release_gate.py` against the live URL post-deploy: _pending_
-- `scripts/oracle_smoke.py` against the live URL post-deploy: _pending_
-- `/health` `commit_sha` field: added in this certification (`RENDER_GIT_COMMIT` /
-  `RETAILOPS_RELEASE_COMMIT`, Render's built-in commit env var — minimal runtime evidence only,
-  not a product feature) — value recorded here once redeployed.
-- Manual UI checklist: _pending_
+- **PR**: [#11](https://github.com/bopoadz-del/TEKsystems_GlobalRetailMNC/pull/11) —
+  "RetailOps v1 release certification (CI, release gate, isolation tests, docs)".
+- **CI run (release branch, final green)**:
+  [29422709269](https://github.com/bopoadz-del/TEKsystems_GlobalRetailMNC/actions/runs/29422709269)
+  — all 6 jobs passed (backend unit/contract, Postgres+pgvector integration, frontend,
+  Docker build+health, E2E release oracle, retrieval-eval report).
+- **CI run (main, post-merge)**:
+  [29422936079](https://github.com/bopoadz-del/TEKsystems_GlobalRetailMNC/actions/runs/29422936079)
+  — green.
+- **Merge commit**: `eb83c9f0221b9bd172f281700baac6b9cff4617e` (PR #11 merged into `main`).
+  This is the release commit of record.
+- **Render deploy**: service `retailops` (`srv-d9al9l0458ps73cb4hag`) switched to
+  `branch: main` (was `feat/retailops-platform-v1`) and redeployed via the Render API/MCP.
+  Deploy `dep-d9bpef3tqb8s73d5nf1g` → **live**, commit `eb83c9f0221b9bd172f281700baac6b9cff4617e`
+  (exact match to the merge commit above — confirmed via `GET /health`, see below).
+- **`/health` post-deploy**:
+  ```json
+  {"status":"ok","version":"1.0.0","kit_snapshot":"local-retail-kit-1.3.0","blocks_commit":"local-retail-kit-1.3.0","database":"ok","commit_sha":"eb83c9f0221b9bd172f281700baac6b9cff4617e"}
+  ```
+  `commit_sha` is populated from Render's built-in `RENDER_GIT_COMMIT` (minimal runtime
+  evidence field added in this certification, not a product feature) and matches the deployed
+  release commit exactly.
+- **`scripts/release_gate.py` against the live URL, post-deploy**: **6/6 passed**
+  (`u_platform` / `platform` / `prj_prebuilt_retail_core`).
+- **`scripts/oracle_smoke.py` against the live URL, post-deploy**: **15/15 passed**
+  (health, root UI 200, actions discovery, all 6 deterministic action fixtures, RAG smoke +
+  4 HF-pack RAG prompts, audit persistence — `run_count=25`, cumulative across this
+  certification's live checks).
+- **Migrations/fixtures/packs idempotency**: `app_factory.lifespan` runs `upgrade_to_head()`
+  unconditionally on every startup (mandatory, fails loud, never skipped in production) — this
+  ran again on the post-merge redeploy with no migration errors, confirming idempotency on an
+  already-migrated database. The `platform-prebuilt` pack/fixtures used by `release_gate.py` /
+  `oracle_smoke.py` were already loaded on this live database from before this certification and
+  were not reloaded (no destructive or duplicate-load operation was run against the live DB, in
+  line with "fix only release-blocking defects" — the packs were already correctly loaded and
+  passing before this branch's changes).
+- **Live agent verification** (`GET /v1/agents`, `u_platform`/`platform`/`prj_prebuilt_retail_core`):
+  `base_count: 1`, `hat_count: 10`; every hat's composed playbook (`?composed=true`) has a
+  non-empty `formulas` (4–5), `standards` (5–6), and `procedures` (2–3) list; `retail.base`'s
+  `allowed_paths` now correctly shows `fixtures/demo/**` (confirming the manifest-path fix is
+  live). Memory safety verified live: unconfirmed save of a confirm-required key → `400`;
+  save of a key named like a secret → `400`; save of an unrecognised/unknown key → `400`.
+  `disable:<hat>` / `disable:<domain>` `put_off_by` triggers are present on every hat's
+  activation config.
+- **Live tenant-isolation spot check**: `GET /v1/audit` with the real `u_platform` principal
+  returns its own runs; the same route with a fabricated, never-provisioned
+  `X-User-Id`/`X-Tenant-Id` pair is rejected with `403` (unknown principal for tenant) before any
+  data lookup — the full matrix of same-org cross-tenant/cross-project isolation (docs, actions,
+  audit, agent memory, integration runs) is exercised with real seeded data in CI's
+  `db-integration` job (`backend/tests/retailops/test_isolation.py` + pre-existing
+  `test_db_retrieval.py` / `test_reasoning_learning.py` isolation tests), which is a stronger
+  guarantee than a live click-through could give without provisioning throwaway tenants against
+  the production database.
+- **Manual UI checklist**: the browser automation tool available in this session could not open
+  a tab in this headless Windows environment (repeated `No browser tab available` — not a
+  product defect, an environment limitation), so full interactive click-through
+  (RENDER.md "Two-minute demo") was not captured as a live screenshot. What *was* verified
+  directly against the live URL instead:
+  1. `GET /` returns the real SPA login shell HTML (title "CEREBRUM RetailOps", the
+     "NORTHSTAR INTELLIGENCE" login card, prefilled `u_platform`/`platform`/
+     `prj_prebuilt_retail_core` identity, "Enter workspace →") — fetched and inspected directly.
+  2. Every subsequent demo-flow action was exercised at the API layer the UI itself calls:
+     `/v1/ask` (stock-discrepancy question → grounded `route: rag` answer with citations),
+     `/v1/actions/retail.analyse_inventory_risk/execute` (→ `success`), `/v1/audit`
+     (→ persisted runs with status/duration/evidence visible). All passed live (see
+     `release_gate.py` / `oracle_smoke.py` results above).
+  3. Item 5 of the RENDER.md smoke checklist ("Australia project cannot retrieve Global-only
+     supplier evidence") requires a live Australia/Global fixture project id, which is
+     generated per-deployment and only discoverable via direct database access (no listing
+     API by design) — this session had no working Postgres console/SSH access to the live
+     `retailops-db` instance to fetch it. The equivalent check with real seeded data passes in
+     CI (`test_db_retrieval.py::test_project_isolation` / `test_tenant_isolation`).
 
 ### Pre-existing live baseline (evidence gathered before this branch's changes were deployed)
 
@@ -184,13 +244,32 @@ a passing baseline before cutover:
   known corpus-composition recall limits; not release-blocking — the six-question release gate
   is the hard RAG contract and passes 6/6).
 
+### Post-cutover live evidence (deployed from `main` @ `eb83c9f`)
+
+Both gates were re-run against the live URL **after** the Render branch switch + redeploy, i.e.
+against the actual certified `main` commit, not the superseded feature branch:
+
+- `scripts/release_gate.py` — **6/6 passed**.
+- `scripts/oracle_smoke.py` — **15/15 passed**, including `root_ui_200` (the frontend SPA shell
+  is built into the deployed Docker image, as it always was for this service).
+- `GET /health` — `commit_sha: eb83c9f0221b9bd172f281700baac6b9cff4617e`, matching the merge
+  commit exactly.
+
+**RetailOps v1 is certified and feature development is frozen.**
+
 ## Unresolved limitations (carried forward, not release-blocking)
 
 1. Live FastEmbed 3-case gold recall is 1/3 on naturally-phrased questions (see Phase 6) —
    documented, not hidden; the release-blocking RAG contract (`release_gate.py`) passes 6/6.
 2. `RETAILOPS_API_KEY` is unset on the live SPA deployment (documented limitation above); the
    gate itself is certified in CI/Docker with a key configured.
-3. Local Windows dev machine used for this certification has no Docker/Postgres available, so
+3. The manual UI checklist could not be captured as a live browser screenshot in this session's
+   headless environment (browser automation tool unavailable); equivalent coverage was gathered
+   directly against the live API layer instead (see Phase 8 above). Item 5 of the RENDER.md
+   smoke checklist (Australia-vs-Global project isolation) needs a live fixture project id that
+   requires direct database access this session did not have; the equivalent check with real
+   seeded data passes in CI.
+4. Local Windows dev machine used for this certification has no Docker/Postgres available, so
    the Docker-build/health job and the Postgres/pgvector integration job could only be verified
    by direct inspection + GitHub Actions execution, not a second local run — GitHub Actions CI
    run results are the verification of record for those two jobs.
