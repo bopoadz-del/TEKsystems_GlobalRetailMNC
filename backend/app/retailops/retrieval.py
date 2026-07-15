@@ -37,7 +37,28 @@ class Citation:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        # Promote pack lineage from chunk metadata into citation fields.
+        meta = self.metadata or {}
+        for key in (
+            "release_id",
+            "rag_pack_id",
+            "collection_id",
+            "source_id",
+            "source_name",
+            "publisher",
+            "jurisdiction",
+            "authority_level",
+            "edition",
+            "source_class",
+            "summary_type",
+            "knowledge_layer",
+            "not_governing_policy",
+        ):
+            if key in meta and key not in data:
+                data[key] = meta[key]
+        data["retrieval_rank"] = self.fused_rank
+        return data
 
 
 def _semantic(
@@ -121,6 +142,11 @@ def hybrid_search(
         raise ValueError("tenant_id and project_id are required for retrieval")
     config = config or get_config()
     top_k = top_k or config.top_k
+
+    from app.retailops.embedding_guard import assert_compatible
+
+    # Refuse queries when stored vectors were produced by a different embedder.
+    assert_compatible(session, tenant_id=tenant_id, project_id=project_id)
 
     semantic = _semantic(session, tenant_id, project_id, query, config.vector_candidates)
     lexical = _lexical(session, tenant_id, project_id, query, config.lexical_candidates)

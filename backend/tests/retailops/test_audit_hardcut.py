@@ -138,10 +138,10 @@ def test_memory_rejects_undeclared_key(db):
 
 
 def test_memory_api(client, db, loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     headers = {
         "X-User-Id": "u_ops_manager",
-        "X-Tenant-Id": "northstar",
+        "X-Tenant-Id": "retail",
         "X-Project-Id": pid,
     }
     denied = client.post(

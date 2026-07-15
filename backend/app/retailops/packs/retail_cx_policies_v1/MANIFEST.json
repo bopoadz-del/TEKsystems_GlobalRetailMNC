@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0.0",
+  "release_id": "retail_cx_policies_v1",
+  "rag_pack_id": "retail_cx_policies_rag",
+  "collection_id": "prebuilt_retail_cx",
+  "domain": "retail",
+  "name": "Retail CX Policies (Bitext) v1",
+  "description": "General synthetic retail customer-experience Q&A ingested as policy corpus for RAG (returns, delivery, payment, store hours). Not a store-specific catalogue.",
+  "huggingface_repo": "bitext/Bitext-retail-ecommerce-llm-chatbot-training-dataset",
+  "licence": "CDLA-Sharing-1.0",
+  "pilot_sample": {
+    "per_intent_cap": 120,
+    "max_rows": 5000
+  },
+  "sources": [
+    {
+      "source_id": "bitext_retail_cx",
+      "source_type": "dataset",
+      "structured_or_text": "text",
+      "source_name": "Bitext Retail eCommerce LLM Chatbot Training Dataset",
+      "publisher": "Bitext Innovations",
+      "authority_level": "public_research_dataset",
+      "source_class": "open_license",
+      "licence": "CDLA-Sharing-1.0",
+      "original_url": "https://huggingface.co/datasets/bitext/Bitext-retail-ecommerce-llm-chatbot-training-dataset"
+    }
+  ]
+}

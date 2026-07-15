@@ -1,0 +1,16 @@
+# FDA Food Code 2022 — Excerpt (fixture for offline pilot)
+
+## Receiving and Storage
+Time/temperature control for safety food shall be received at required temperatures.
+Refrigerated food must be maintained at 5°C (41°F) or less during storage.
+
+## Temperature Control
+Hot holding of time/temperature control for safety food shall be at 57°C (135°F) or above.
+Cold holding shall be at 5°C (41°F) or less.
+
+## Date Marking
+Ready-to-eat time/temperature control for safety food prepared and held refrigerated
+for more than 24 hours shall be clearly marked with the dispose-by date.
+
+## Hygiene
+Food employees shall clean hands and exposed portions of arms prior to food preparation.

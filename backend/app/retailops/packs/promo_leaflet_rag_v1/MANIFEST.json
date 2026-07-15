@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0.0",
+  "release_id": "promo_leaflet_rag_v1",
+  "rag_pack_id": "promo_leaflet_rag",
+  "collection_id": "prebuilt_promo_leaflet",
+  "domain": "retail",
+  "name": "Promotion Leaflet RAG (mSOP) v1",
+  "description": "Multi-brand advertisement flyer / promotion rows (brand, category, GTIN, price, discount) for promo/offer RAG. Not a single-store OS. Images deferred to Store Digital Twin work.",
+  "huggingface_repo": "retail-product-promotion/mSOP-765k",
+  "related": ["blamm/retail_visual_rag_pipeline"],
+  "pilot_sample": {"max_rows": 5000},
+  "images": "deferred",
+  "sources": [
+    {
+      "source_id": "msop_promo_leaflets",
+      "source_type": "dataset",
+      "structured_or_text": "text",
+      "source_name": "mSOP-765k promotion parquet (text fields)",
+      "publisher": "retail-product-promotion",
+      "authority_level": "public_research_dataset",
+      "source_class": "open_license",
+      "original_url": "https://huggingface.co/datasets/retail-product-promotion/mSOP-765k"
+    }
+  ]
+}

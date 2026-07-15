@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0.0",
+  "release_id": "retail_ops_sops_v1",
+  "rag_pack_id": "retail_ops_sops_rag",
+  "collection_id": "prebuilt_retail_ops_sops",
+  "domain": "retail",
+  "name": "Retail Ops SOPs (SOPBench) v1",
+  "description": "Domain SOP procedure texts from amazon/sop-bench for retail email routing, customer service, warehouse inspection, and order fulfilment. Not a product catalogue.",
+  "huggingface_repo": "amazon/sop-bench",
+  "domains": [
+    "email_intent",
+    "customer_service",
+    "warehouse_package_inspection",
+    "order_fulfillment"
+  ],
+  "sources": [
+    {
+      "source_id": "sopbench_ops",
+      "source_type": "document",
+      "structured_or_text": "text",
+      "source_name": "Amazon SOPBench operational SOP texts",
+      "publisher": "Amazon Science",
+      "authority_level": "public_research_dataset",
+      "source_class": "open_license",
+      "original_url": "https://huggingface.co/datasets/amazon/sop-bench"
+    }
+  ]
+}

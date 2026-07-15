@@ -1,9 +1,9 @@
 """Embedding providers for RetailOps.
 
-Default backend is a deterministic feature-hash embedder: fast, dependency-free,
-and reproducible — ideal for automated tests and offline pilots. An optional
-``fastembed`` backend (ONNX BGE-small) is used when ``RETAILOPS_EMBED_BACKEND=fastembed``.
-Both produce L2-normalized ``EMBED_DIM`` vectors so cosine distance is stable.
+Default / deploy path: ``RETAILOPS_EMBED_BACKEND=fastembed`` (ONNX
+``BAAI/bge-small-en-v1.5``, 384 dims). Tests force ``hash`` via conftest for a
+deterministic no-ML embedder. Both target ``EMBED_DIM`` (384) so pgvector
+columns stay stable — do not invent Azure embeddings as the default.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from typing import List, Optional
 from app.retailops.config import EMBED_DIM, RetailOpsConfig, get_config
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
+_provider: Optional["EmbeddingProvider"] = None
 
 
 def _tokenize(text: str) -> List[str]:
@@ -24,6 +25,7 @@ def _tokenize(text: str) -> List[str]:
 
 class EmbeddingProvider:
     dim: int = EMBED_DIM
+    model_name: str = "embedding_provider"
 
     def embed(self, text: str) -> List[float]:  # pragma: no cover - interface
         raise NotImplementedError
@@ -35,6 +37,8 @@ class EmbeddingProvider:
 class HashEmbeddingProvider(EmbeddingProvider):
     """Deterministic feature-hashing embedder with sub-word n-grams."""
 
+    model_name = "hash-v1"
+
     def __init__(self, dim: int = EMBED_DIM) -> None:
         self.dim = dim
 
@@ -45,7 +49,6 @@ class HashEmbeddingProvider(EmbeddingProvider):
             return vec
         for tok in tokens:
             features = [tok]
-            # character trigrams give the hash embedder some fuzziness.
             if len(tok) > 3:
                 features.extend(tok[i : i + 3] for i in range(len(tok) - 2))
             for feat in features:
@@ -62,31 +65,58 @@ class HashEmbeddingProvider(EmbeddingProvider):
 
 
 class FastEmbedProvider(EmbeddingProvider):  # pragma: no cover - optional heavy dep
-    """ONNX BGE-small embedder via fastembed (optional)."""
+    """ONNX BGE-small embedder via fastembed (real semantic path)."""
 
-    def __init__(self, dim: int = EMBED_DIM) -> None:
-        from fastembed import TextEmbedding
+    model_name = "BAAI/bge-small-en-v1.5"
+    # Micro-batches keep peak memory bounded for full-document pack ingest.
+    DEFAULT_BATCH_SIZE = 64
 
-        self._model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+    def __init__(self, dim: int = EMBED_DIM, batch_size: int = DEFAULT_BATCH_SIZE) -> None:
+        import os
+
+        # HF xet CAS intermittently 401s unauthenticated downloads on Render.
+        os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+        try:
+            from fastembed import TextEmbedding
+        except ImportError as exc:  # pragma: no cover - missing optional dep
+            raise RuntimeError(
+                "RETAILOPS_EMBED_BACKEND=fastembed requires the 'fastembed' package; "
+                "refusing silent fallback to hash/Azure. Install fastembed or set "
+                "RETAILOPS_EMBED_BACKEND=hash for tests only."
+            ) from exc
+        import numpy as np
+
+        self._np = np
+        self._model = TextEmbedding(model_name=self.model_name)
         self.dim = dim
+        self.batch_size = max(1, int(batch_size))
 
     def embed(self, text: str) -> List[float]:
         return self.embed_batch([text])[0]
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
-        import numpy as np
-
-        out = []
-        for arr in self._model.embed(list(texts)):
-            v = np.asarray(arr, dtype="float32")
-            n = float(np.linalg.norm(v))
-            if n > 0:
-                v = v / n
-            out.append(v.tolist())
+        """Bulk-embed with BGE in fixed-size batches (full-corpus ingest safe)."""
+        if not texts:
+            return []
+        out: List[List[float]] = []
+        for start in range(0, len(texts), self.batch_size):
+            chunk = list(texts[start : start + self.batch_size])
+            for arr in self._model.embed(chunk):
+                v = self._np.asarray(arr, dtype="float32")
+                if v.shape[0] > self.dim:
+                    v = v[: self.dim]
+                elif v.shape[0] < self.dim:
+                    pad = self._np.zeros(self.dim - v.shape[0], dtype="float32")
+                    v = self._np.concatenate([v, pad])
+                n = float(self._np.linalg.norm(v))
+                if n > 0:
+                    v = v / n
+                out.append(v.tolist())
+        if len(out) != len(texts):
+            raise RuntimeError(
+                f"BGE embed_batch size mismatch: got {len(out)} vectors for {len(texts)} texts"
+            )
         return out
-
-
-_provider: Optional[EmbeddingProvider] = None
 
 
 def get_embedder(config: Optional[RetailOpsConfig] = None) -> EmbeddingProvider:
@@ -94,13 +124,20 @@ def get_embedder(config: Optional[RetailOpsConfig] = None) -> EmbeddingProvider:
     if _provider is not None:
         return _provider
     config = config or get_config()
-    if config.embed_backend == "fastembed":
-        try:
-            _provider = FastEmbedProvider(config.embed_dim)
-        except Exception:
-            _provider = HashEmbeddingProvider(config.embed_dim)
-    else:
+    # Default is fastembed (BGE-small ONNX). Use hash only in unit tests via
+    # RETAILOPS_EMBED_BACKEND=hash (see tests/retailops/conftest.py).
+    backend = (config.embed_backend or "fastembed").lower()
+    if backend in ("fastembed", "bge", "real"):
+        # Do not silently fall back to hash when BGE was explicitly requested —
+        # pack ingest must record real semantic vectors or fail loudly.
+        _provider = FastEmbedProvider(config.embed_dim)
+    elif backend == "hash":
         _provider = HashEmbeddingProvider(config.embed_dim)
+    else:
+        raise ValueError(
+            f"Unknown RETAILOPS_EMBED_BACKEND={backend!r}; "
+            "use 'fastembed' (default) or 'hash' (tests only)"
+        )
     return _provider
 
 

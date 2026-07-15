@@ -25,7 +25,7 @@ from sqlalchemy import select
 
 MANAGER = "u_ops_manager"
 VIEWER = "u_viewer"
-TENANT = "northstar"
+TENANT = "retail"
 
 
 def _headers(user, project_id):
@@ -56,7 +56,7 @@ def registry():
 
 @pytest.mark.asyncio
 async def test_reasoner_factual_question_routes_rag(db, loaded_projects, registry):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     out = await run_orchestrator(
         session=db,
         context=_ctx(pid),
@@ -69,7 +69,7 @@ async def test_reasoner_factual_question_routes_rag(db, loaded_projects, registr
 
 @pytest.mark.asyncio
 async def test_reasoner_explicit_action_routes_action(db, loaded_projects, registry):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     out = await run_orchestrator(
         session=db,
         context=_ctx(pid),
@@ -82,7 +82,7 @@ async def test_reasoner_explicit_action_routes_action(db, loaded_projects, regis
 
 @pytest.mark.asyncio
 async def test_reasoner_action_topic_question_stays_rag(db, loaded_projects, registry):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     out = await run_orchestrator(
         session=db,
         context=_ctx(pid),
@@ -172,7 +172,7 @@ def test_reasoner_new_action_available_without_router_edits():
 # ---------------------------------------------------------------------------
 
 def test_verified_event_persisted_and_idempotent(db, loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     engine = RetailOutcomeLearningEngine()
     payload = {
         "sku": "TEST-1",
@@ -214,7 +214,7 @@ def test_verified_event_persisted_and_idempotent(db, loaded_projects):
 
 
 def test_unverified_event_does_not_update_profile(db, loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     engine = RetailOutcomeLearningEngine()
     before = engine.list_profiles(db, tenant_id=TENANT, project_id=pid, module="demand_reorder")
     before_n = len(before)
@@ -244,7 +244,7 @@ def test_unverified_event_does_not_update_profile(db, loaded_projects):
 
 @pytest.mark.asyncio
 async def test_record_outcome_requires_confirmation_and_permission(db, loaded_projects, registry):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     spec = registry.resolve("retail.record_verified_outcome")
     args = {
         "module": "demand_reorder",
@@ -278,7 +278,7 @@ async def test_record_outcome_requires_confirmation_and_permission(db, loaded_pr
 
 
 def test_tenant_isolation_profiles(db, loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     bootstrap.ensure_tenant(db, "otherco", "Other Co")
     other = bootstrap.ensure_project(
         db, tenant_id="otherco", canonical_name="Other Region"
@@ -452,7 +452,7 @@ def test_exception_detection_severity_and_ranking():
 # ---------------------------------------------------------------------------
 
 def test_learning_summary_api(client, loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     r = client.get("/v1/learning/summary", headers=_headers(MANAGER, pid))
     assert r.status_code == 200
     body = r.json()
@@ -463,7 +463,7 @@ def test_learning_summary_api(client, loaded_projects):
 
 
 def test_recommend_reorder_api(client, loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     r = client.post(
         "/v1/actions/retail.recommend_reorder_parameters/execute",
         headers=_headers(MANAGER, pid),
@@ -484,7 +484,7 @@ def test_recommend_reorder_api(client, loaded_projects):
 
 
 def test_recommend_reorder_missing_profile_dependency(client, loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     r = client.post(
         "/v1/actions/retail.recommend_reorder_parameters/execute",
         headers=_headers(MANAGER, pid),
@@ -494,7 +494,7 @@ def test_recommend_reorder_missing_profile_dependency(client, loaded_projects):
 
 
 def test_fixture_confidence_bands(db, loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     engine = RetailOutcomeLearningEngine()
     profiles = {
         p.entity_key: p

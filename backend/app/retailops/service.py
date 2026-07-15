@@ -150,14 +150,25 @@ def enrich_arguments(
             session, context.tenant_id, context.project_id, query=query
         )
     if "rows" in props and not args.get("rows"):
-        role_records = gather_table_rows(session, context.tenant_id, context.project_id)
-        if role_records:
-            # Flatten rows from table records into a single rows list.
-            rows: List[Dict[str, Any]] = []
-            for rec in role_records:
-                rows.extend(rec.get("rows", []))
-            args["rows"] = rows
-            args.setdefault("records", role_records)
+        # Prefer structured public evaluation tables (retail_core_open_v1) when present.
+        try:
+            from app.retailops.packs.retail_core_open_v1.loaders.load_structured import (
+                inventory_rows_from_sql,
+            )
+
+            sql_rows = inventory_rows_from_sql(session)
+            if sql_rows:
+                args["rows"] = sql_rows
+        except Exception:
+            sql_rows = []
+        if not args.get("rows"):
+            role_records = gather_table_rows(session, context.tenant_id, context.project_id)
+            if role_records:
+                rows: List[Dict[str, Any]] = []
+                for rec in role_records:
+                    rows.extend(rec.get("rows", []))
+                args["rows"] = rows
+                args.setdefault("records", role_records)
     if "rule_records" in props and not args.get("rule_records") and not args.get("rules"):
         args["rule_records"] = gather_records_by_role(
             session, context.tenant_id, context.project_id, _RULE_ROLES
@@ -166,6 +177,29 @@ def enrich_arguments(
         args["evidence"] = gather_records_by_role(
             session, context.tenant_id, context.project_id, _EVIDENCE_ROLES
         )
+        # Optional external FTC support from platform-prebuilt corpus (never overrides rules).
+        if not args["evidence"]:
+            try:
+                from app.retailops.packs.retail_core_open_v1 import (
+                    PLATFORM_PROJECT_CANONICAL,
+                    PLATFORM_TENANT_ID,
+                )
+                from app.retailops.bootstrap import get_project_by_canonical
+
+                plat = get_project_by_canonical(
+                    session, PLATFORM_TENANT_ID, PLATFORM_PROJECT_CANONICAL
+                )
+                if plat:
+                    ftc = gather_records_by_role(
+                        session, PLATFORM_TENANT_ID, plat.id, {"advertising_guidance"}
+                    )
+                    if ftc:
+                        for rec in ftc:
+                            rec.setdefault("authority_level", "official_guidance")
+                            rec.setdefault("not_governing_policy", True)
+                        args["evidence"] = ftc
+            except Exception:
+                pass
 
     # Generic defaulting for required enum inputs that a chat/orchestrator flow
     # cannot otherwise supply: pick an option named in the query, else the first.

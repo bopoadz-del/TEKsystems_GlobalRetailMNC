@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "release_id": "retail_ecom_rag_eval_v1",
+  "rag_pack_id": "retail_ecom_rag_eval",
+  "collection_id": "prebuilt_retail_ecom_eval",
+  "domain": "retail",
+  "name": "Retail E-com RAG Eval (rescommons group B) v1",
+  "description": "Group-B RAG samples from rescommons/Ecom-Chatbot-Finetuning-Dataset used primarily as oracle/eval gold. Selective ingest of grounded snippets only — not a full Amazon/ASOS catalogue dump.",
+  "huggingface_repo": "rescommons/Ecom-Chatbot-Finetuning-Dataset",
+  "group_filter": "B",
+  "pilot_sample": {"max_eval_cases": 200, "max_ingest_docs": 2000},
+  "sources": [
+    {
+      "source_id": "rescommons_rag_b",
+      "source_type": "dataset",
+      "structured_or_text": "text",
+      "source_name": "rescommons Ecom Chatbot Finetuning (group B RAG)",
+      "publisher": "rescommons",
+      "authority_level": "public_research_dataset",
+      "source_class": "open_license",
+      "original_url": "https://huggingface.co/datasets/rescommons/Ecom-Chatbot-Finetuning-Dataset"
+    }
+  ]
+}

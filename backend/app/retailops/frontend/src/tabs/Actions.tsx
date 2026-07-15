@@ -19,7 +19,15 @@ function omitBase64(output: Record<string, unknown>) {
   return rest;
 }
 
-function ActionCard({ principal, spec }: { principal: Principal; spec: ActionSpec }) {
+function ActionCard({
+  principal,
+  spec,
+  onResult,
+}: {
+  principal: Principal;
+  spec: ActionSpec;
+  onResult?: (r: ActionResult) => void;
+}) {
   const props = spec.input_schema.properties ?? {};
   const required = new Set(spec.input_schema.required ?? []);
   // Only scalar inputs are rendered as form fields; complex inputs (records,
@@ -43,7 +51,9 @@ function ActionCard({ principal, spec }: { principal: Principal; spec: ActionSpe
       for (const k of scalarKeys) {
         if (values[k] !== undefined && values[k] !== "") args[k] = values[k];
       }
-      setResult(await api.execute(principal, spec.action_id, args, confirm));
+      const r = await api.execute(principal, spec.action_id, args, confirm);
+      setResult(r);
+      onResult?.(r);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -83,8 +93,12 @@ function ActionCard({ principal, spec }: { principal: Principal; spec: ActionSpe
         </label>
       )}
       <div style={{ marginTop: 8 }}>
-        <button className="primary" disabled={busy} onClick={run}>
-          {busy ? "Running…" : "Run action"}
+        <button
+          className="primary"
+          disabled={busy || (spec.confirmation_required && !confirm)}
+          onClick={run}
+        >
+          {busy ? "Running…" : spec.confirmation_required && !confirm ? "Confirm required" : "Run action"}
         </button>
       </div>
       {error && <p className="error">{error}</p>}
@@ -132,7 +146,13 @@ function ActionCard({ principal, spec }: { principal: Principal; spec: ActionSpe
   );
 }
 
-export function Actions({ principal }: { principal: Principal }) {
+export function Actions({
+  principal,
+  onResult,
+}: {
+  principal: Principal;
+  onResult?: (r: ActionResult) => void;
+}) {
   const [specs, setSpecs] = useState<ActionSpec[]>([]);
   const [error, setError] = useState("");
 
@@ -142,9 +162,9 @@ export function Actions({ principal }: { principal: Principal }) {
 
   if (error) return <div className="card error">{error}</div>;
   return (
-    <div>
+    <div className="outcome-studio">
       {specs.map((s) => (
-        <ActionCard key={s.action_id} principal={principal} spec={s} />
+        <ActionCard key={s.action_id} principal={principal} spec={s} onResult={onResult} />
       ))}
       {specs.length === 0 && <div className="card muted">No actions available.</div>}
     </div>

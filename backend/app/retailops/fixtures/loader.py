@@ -1,8 +1,9 @@
-"""Load the fictional Northstar fixture pack into the operational store.
+"""Load the generic demo fixture pack into the operational store.
 
 Two canonical projects are created and their documents ingested with document
-roles (used by schema-driven context enrichment). Verified learning outcomes
-are loaded idempotently into PostgreSQL learning tables.
+roles (used by schema-driven context enrichment). All data is fictional and
+contains no retailer brand names. Verified learning outcomes are loaded
+idempotently into PostgreSQL learning tables.
 """
 
 from __future__ import annotations
@@ -17,20 +18,18 @@ from app.retailops import bootstrap
 from app.retailops.ingestion import ingest_document
 from app.retailops.learning import RetailOutcomeLearningEngine
 
-_HERE = Path(__file__).resolve().parent / "northstar"
+_HERE = Path(__file__).resolve().parent / "demo"
 _LEARNING = _HERE / "learning" / "verified_outcomes.json"
 
-TENANT_ID = "northstar"
-TENANT_NAME = "Northstar Global Retail"
+TENANT_ID = "retail"
+TENANT_NAME = "Retail Demo Tenant"
 
-# Canonical project name -> fixture subdirectory. Stable canonical names let
-# tests resolve generated project IDs by name.
+# Canonical project name -> fixture subdirectory.
 PROJECTS: Dict[str, str] = {
-    "Northstar Riyadh Region": "riyadh",
-    "Northstar Melbourne Region": "melbourne",
+    "Australia Region": "australia",
+    "Global Region": "global",
 }
 
-# Default pilot principals with retail permissions.
 MANAGER_ID = "u_ops_manager"
 VIEWER_ID = "u_viewer"
 
@@ -63,7 +62,7 @@ def load_learning_fixtures(
     if not _LEARNING.exists():
         return 0
     data = json.loads(_LEARNING.read_text(encoding="utf-8"))
-    target_canonical = data.get("project_canonical") or "Northstar Riyadh Region"
+    target_canonical = data.get("project_canonical") or "Global Region"
     project_id = project_ids.get(target_canonical)
     if not project_id:
         return 0
@@ -121,6 +120,7 @@ def load_fixtures(session: Session, tenant_id: str = TENANT_ID) -> Dict[str, str
             )
             meta = dict(doc.meta or {})
             meta["doc_role"] = _role_for(path.name)
+            meta["knowledge_layer"] = "tenant_project"
             doc.meta = meta
         session.flush()
 

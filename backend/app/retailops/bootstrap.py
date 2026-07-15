@@ -45,8 +45,17 @@ def ensure_user(
         )
         session.add(user)
         session.flush()
-    elif permissions is not None:
-        user.permissions = permissions
+    else:
+        # Keep principal aligned with the requested tenant (demo principals are
+        # shared ids across environment resets).
+        if user.tenant_id != tenant_id:
+            user.tenant_id = tenant_id
+        if email is not None:
+            user.email = email
+        if name is not None:
+            user.name = name
+        if permissions is not None:
+            user.permissions = permissions
         session.flush()
     return user
 

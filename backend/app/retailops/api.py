@@ -512,6 +512,102 @@ def overview(
     }
 
 
+@router.get("/v1/packs/retail_core_open_v1")
+def pack_release_status(session: Session = Depends(get_session)) -> Dict[str, Any]:
+    """Inspect retail_core_open_v1 release identity, sources, and load counts."""
+    from app.retailops.models import RetailPackSource, RetailSale, RetailTransaction
+    from app.retailops.packs.retail_core_open_v1 import RELEASE_ID
+    from app.retailops.packs.retail_core_open_v1.registry import load_manifest, release_identity
+
+    sources = session.execute(
+        select(RetailPackSource).where(RetailPackSource.release_id == RELEASE_ID)
+    ).scalars().all()
+    sales = session.execute(
+        select(func.count()).select_from(RetailSale).where(RetailSale.release_id == RELEASE_ID)
+    ).scalar_one()
+    txns = session.execute(
+        select(func.count()).select_from(RetailTransaction).where(
+            RetailTransaction.release_id == RELEASE_ID
+        )
+    ).scalar_one()
+    return {
+        "identity": release_identity(),
+        "manifest": {
+            "release_id": load_manifest().get("release_id"),
+            "source_count": len(load_manifest().get("sources") or []),
+        },
+        "loaded_sources": [
+            {
+                "source_id": s.source_id,
+                "status": s.status,
+                "structured_row_count": s.structured_row_count,
+                "document_count": s.document_count,
+                "chunk_count": s.chunk_count,
+                "content_checksum": s.content_checksum,
+                "knowledge_layer": s.knowledge_layer,
+            }
+            for s in sources
+        ],
+        "counts": {"retail_sales": sales, "retail_transactions": txns},
+    }
+
+
+@router.get("/v1/packs/hf_retail")
+def hf_retail_packs_status(session: Session = Depends(get_session)) -> Dict[str, Any]:
+    """Inspect Hugging Face retail RAG packs (Bitext, SOPBench, mSOP, rescommons)."""
+    from app.retailops.models import RetailPackSource
+    from app.retailops.packs.promo_leaflet_rag_v1 import RELEASE_ID as PROMO_ID
+    from app.retailops.packs.retail_cx_policies_v1 import RELEASE_ID as CX_ID
+    from app.retailops.packs.retail_ecom_rag_eval_v1 import RELEASE_ID as EVAL_ID
+    from app.retailops.packs.retail_ops_sops_v1 import RELEASE_ID as SOPS_ID
+
+    release_ids = [CX_ID, SOPS_ID, PROMO_ID, EVAL_ID]
+    sources = session.execute(
+        select(RetailPackSource).where(RetailPackSource.release_id.in_(release_ids))
+    ).scalars().all()
+    by_release: Dict[str, List[Dict[str, Any]]] = {rid: [] for rid in release_ids}
+    for s in sources:
+        by_release.setdefault(s.release_id, []).append(
+            {
+                "source_id": s.source_id,
+                "status": s.status,
+                "document_count": s.document_count,
+                "chunk_count": s.chunk_count,
+                "content_checksum": s.content_checksum,
+                "licence": s.licence,
+                "publisher": s.publisher,
+            }
+        )
+    return {
+        "packs": [
+            {
+                "release_id": CX_ID,
+                "hub": "bitext/Bitext-retail-ecommerce-llm-chatbot-training-dataset",
+                "role": "general_cx_policies",
+                "loaded_sources": by_release.get(CX_ID, []),
+            },
+            {
+                "release_id": SOPS_ID,
+                "hub": "amazon/sop-bench",
+                "role": "ops_sop_texts",
+                "loaded_sources": by_release.get(SOPS_ID, []),
+            },
+            {
+                "release_id": PROMO_ID,
+                "hub": "retail-product-promotion/mSOP-765k",
+                "role": "multi_brand_promo_leaflets",
+                "loaded_sources": by_release.get(PROMO_ID, []),
+            },
+            {
+                "release_id": EVAL_ID,
+                "hub": "rescommons/Ecom-Chatbot-Finetuning-Dataset",
+                "role": "rag_eval_plus_selective_snippets",
+                "loaded_sources": by_release.get(EVAL_ID, []),
+            },
+        ]
+    }
+
+
 @router.get("/v1/learning/summary")
 def learning_summary(
     module: Optional[str] = None,

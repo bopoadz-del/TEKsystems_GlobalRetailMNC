@@ -12,7 +12,7 @@ from app.retailops.service import build_registry
 
 MANAGER = "u_ops_manager"
 VIEWER = "u_viewer"
-TENANT = "northstar"
+TENANT = "retail"
 
 
 def _headers(user, project_id):
@@ -24,7 +24,7 @@ def _headers(user, project_id):
 # ---------------------------------------------------------------------------
 
 def test_list_and_get_actions(client, loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     r = client.get("/v1/actions", headers=_headers(MANAGER, pid))
     ids = {a["action_id"] for a in r.json()["actions"]}
     assert ids == {
@@ -42,7 +42,7 @@ def test_list_and_get_actions(client, loaded_projects):
 
 
 def test_execute_unsupported(client, loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     r = client.post(
         "/v1/actions/retail.no_such_action/execute",
         headers=_headers(MANAGER, pid), json={"arguments": {}},
@@ -51,7 +51,7 @@ def test_execute_unsupported(client, loaded_projects):
 
 
 def test_execute_permission_denied(client, loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     r = client.post(
         "/v1/actions/retail.analyse_inventory_risk/execute",
         headers=_headers(VIEWER, pid), json={"arguments": {"rows": [{"SKU": "X", "On Hand": 1}]}},
@@ -61,7 +61,7 @@ def test_execute_permission_denied(client, loaded_projects):
 
 def test_execute_dependency_required_on_empty_project(client, loaded_projects):
     with session_scope() as s:
-        empty = bootstrap.ensure_project(s, tenant_id=TENANT, canonical_name="Northstar Empty Region").id
+        empty = bootstrap.ensure_project(s, tenant_id=TENANT, canonical_name="Empty Region").id
     r = client.post(
         "/v1/actions/retail.analyse_inventory_risk/execute",
         headers=_headers(MANAGER, empty), json={"arguments": {}},
@@ -72,7 +72,7 @@ def test_execute_dependency_required_on_empty_project(client, loaded_projects):
 
 
 def test_execute_success_and_audit_persisted(client, loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     r = client.post(
         "/v1/actions/retail.analyse_inventory_risk/execute",
         headers=_headers(MANAGER, pid), json={"arguments": {}},
@@ -89,7 +89,7 @@ def test_execute_success_and_audit_persisted(client, loaded_projects):
 
 
 def test_reserved_argument_override_ignored(client, loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     r = client.post(
         "/v1/actions/retail.generate_operations_brief/execute",
         headers=_headers(MANAGER, pid),
@@ -115,7 +115,7 @@ def test_reserved_argument_override_ignored(client, loaded_projects):
     ],
 )
 async def test_orchestrator_routing(loaded_projects, question, expected_route):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     ctx = ActionContext(
         user_id=MANAGER, tenant_id=TENANT, organisation_id=TENANT, project_id=pid,
         permissions=["retail:read", "retail:analyse"], allowed_domains=["retail"],
@@ -127,7 +127,7 @@ async def test_orchestrator_routing(loaded_projects, question, expected_route):
 
 @pytest.mark.asyncio
 async def test_factual_question_uses_rag_with_citations(loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     ctx = ActionContext(
         user_id=MANAGER, tenant_id=TENANT, organisation_id=TENANT, project_id=pid,
         permissions=["retail:read", "retail:analyse"], allowed_domains=["retail"],
@@ -144,7 +144,7 @@ async def test_factual_question_uses_rag_with_citations(loaded_projects):
 
 @pytest.mark.asyncio
 async def test_unknown_request_never_fabricates(loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     ctx = ActionContext(
         user_id=MANAGER, tenant_id=TENANT, organisation_id=TENANT, project_id=pid,
         permissions=["retail:read"], allowed_domains=["retail"],
@@ -161,7 +161,7 @@ async def test_unknown_request_never_fabricates(loaded_projects):
 
 @pytest.mark.asyncio
 async def test_action_ask_uses_deterministic_summary_with_fake_provider(loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     ctx = ActionContext(
         user_id=MANAGER, tenant_id=TENANT, organisation_id=TENANT, project_id=pid,
         permissions=["retail:read", "retail:analyse"], allowed_domains=["retail"],
@@ -186,21 +186,21 @@ async def test_action_ask_uses_deterministic_summary_with_fake_provider(loaded_p
 
 @pytest.mark.asyncio
 async def test_cross_project_cannot_retrieve_other_evidence(loaded_projects):
-    riyadh = loaded_projects["Northstar Riyadh Region"]
-    melbourne = loaded_projects["Northstar Melbourne Region"]
-    assert riyadh != melbourne
+    global_pid = loaded_projects["Global Region"]
+    australia = loaded_projects["Australia Region"]
+    assert global_pid != australia
     ctx = ActionContext(
-        user_id=MANAGER, tenant_id=TENANT, organisation_id=TENANT, project_id=melbourne,
+        user_id=MANAGER, tenant_id=TENANT, organisation_id=TENANT, project_id=australia,
         permissions=["retail:read"], allowed_domains=["retail"],
     )
     with session_scope() as s:
         out = await run_orchestrator(
             session=s, context=ctx,
-            question="What did the Al-Waha chilled dairy supplier notice say?",
+            question="What did the Harbour Fresh chilled dairy supplier notice say?",
         )
-    # Riyadh-only supplier ("Al-Waha") must not surface in Melbourne citations.
+    # Global-only supplier must not surface in Australia citations.
     joined = " ".join(c.get("excerpt", "") for c in out["citations"]).lower()
-    assert "al-waha" not in joined
+    assert "harbour fresh" not in joined
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +208,7 @@ async def test_cross_project_cannot_retrieve_other_evidence(loaded_projects):
 # ---------------------------------------------------------------------------
 
 def test_end_to_end_three_actions(client, loaded_projects):
-    pid = loaded_projects["Northstar Riyadh Region"]
+    pid = loaded_projects["Global Region"]
     H = _headers(MANAGER, pid)
 
     brief = client.post(

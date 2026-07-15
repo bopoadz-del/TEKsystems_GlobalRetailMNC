@@ -19,7 +19,9 @@ services:
           name: retailops-db
           property: connectionString
       - key: RETAILOPS_EMBED_BACKEND
-        value: hash
+        value: fastembed
+      - key: HF_HUB_DISABLE_XET
+        value: "1"
       # OpenAI chat (set OPENAI_API_KEY in Dashboard — never commit).
       - key: RETAILOPS_LLM_PROVIDER
         value: openai
