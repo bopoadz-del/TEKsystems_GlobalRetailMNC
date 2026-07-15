@@ -60,9 +60,12 @@ runs on PRs/pushes to `main` and `workflow_dispatch`, with six blocking jobs:
    `RETAILOPS_REQUIRE_DB=1` + `CI=true` (fails, never skips, on an unreachable DB), full
    `tests/retailops` suite (isolation, audit, ingest + hybrid retrieval included).
 3. **Frontend** — `npm ci`, `npm run lint`, `npm run build` (which runs `tsc -b && vite build`).
-4. **Docker build + health** — builds the exact `backend/app/retailops/deploy/Dockerfile`,
-   runs the container with an API key configured, asserts `/health` is public + `/v1/*` is
-   gated (401 without key, 200 with key), never a wildcard CORS origin.
+4. **Docker build + health** — builds the exact `backend/app/retailops/deploy/Dockerfile`, runs
+   the container against a real Postgres/pgvector service (mandatory startup migrations, no
+   skip), asserts `/health` is public and the `RETAILOPS_API_KEY` shared-secret gate on `/v1/*`
+   rejects no-key and wrong-key requests (401) and passes a correct key through to the app
+   (which then legitimately 403s the unseeded/unknown test principal — defense in depth, not a
+   gate failure), never a wildcard CORS origin.
 5. **E2E release oracle (full stack)** — migrates, loads demo + platform-prebuilt + HF mini
    packs, starts the real API, runs `scripts/oracle_smoke.py` **and**
    `scripts/release_gate.py` against the local full stack.
@@ -70,8 +73,9 @@ runs on PRs/pushes to `main` and `workflow_dispatch`, with six blocking jobs:
    `retail_ecom_rag_eval_v1` gold set → `docs/retrieval_eval_report.md` +
    `artifacts/retrieval_eval.json`, uploaded as a CI artifact.
 
-CI run link / status: see "Deploy certification" below (filled in once the certification PR
-is opened and CI has executed on GitHub).
+CI run link / status: all 6 jobs green on the certification branch —
+https://github.com/bopoadz-del/TEKsystems_GlobalRetailMNC/actions/runs/29421341846 (commit
+`75c2e32`). See "Deploy certification" below for the merge-to-`main` run.
 
 ## Phase 3 — `scripts/release_gate.py`
 
