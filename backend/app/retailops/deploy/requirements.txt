@@ -18,7 +18,7 @@ alembic>=1.13.0
 fastembed>=0.4.0
 
 # Orchestration
-langgraph>=0.2.0
+langgraph>=1.2.9
 
 # Ingestion parsers + FreshRetailNet parquet
 pypdf>=5.0.0
