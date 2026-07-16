@@ -497,7 +497,8 @@ Embedding space: documents stamp `embedding_model` + `embedding_dim`; ingest and
 hybrid query refuse mismatched fingerprints (`embedding_guard.py`).
 
 **Pilot:** see [docs/pilot_guardrails.md](docs/pilot_guardrails.md) for network,
-data-scope, and mock-integration rules before a client pilot.
+data-scope, and mock-integration rules before a client pilot. Closure summary:
+[docs/CLOSURE_REPORT.md](docs/CLOSURE_REPORT.md).
 
 ## Known limitations
 
