@@ -484,6 +484,8 @@ See [RENDER.md](RENDER.md) for full HF load on Render and [LICENSES.md](backend/
 Trusted tenant/project/permissions are server-resolved. Retrieval and learning
 are fail-closed for isolation. Audit stores hashes/metadata — never secrets.
 Model/request arguments cannot override `tenant_id` / `project_id` / permissions.
+`X-Project-Id` must refer to a project that **exists under the caller's tenant**
+(invented or cross-tenant project IDs are rejected).
 
 Optional shared-secret gate: set `RETAILOPS_API_KEY` and send `X-API-Key` on
 non-public routes (`/health` remains public). Browser CORS is an allowlist via
@@ -493,6 +495,9 @@ trusted header triples resolved server-side.
 
 Embedding space: documents stamp `embedding_model` + `embedding_dim`; ingest and
 hybrid query refuse mismatched fingerprints (`embedding_guard.py`).
+
+**Pilot:** see [docs/pilot_guardrails.md](docs/pilot_guardrails.md) for network,
+data-scope, and mock-integration rules before a client pilot.
 
 ## Known limitations
 

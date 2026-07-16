@@ -37,7 +37,7 @@ from app.retailops.audit import list_action_runs, persist_action_run
 from app.retailops.db import get_session
 from app.retailops.kit.contract import ActionContext, ActionResult, ActionStatus
 from app.retailops.kit.contract.models import ActionResult as _AR
-from app.retailops.models import Document, User
+from app.retailops.models import Document, Project, User
 from app.retailops.orchestrator import run_orchestrator
 
 router = APIRouter()
@@ -61,15 +61,19 @@ def get_context(
     user = session.get(User, x_user_id)
     if user is None or user.tenant_id != x_tenant_id:
         raise HTTPException(status_code=403, detail="unknown principal for tenant")
+    # Project must exist under the same tenant — blocks invented / cross-tenant IDs.
+    project = session.get(Project, x_project_id)
+    if project is None or project.tenant_id != x_tenant_id:
+        raise HTTPException(status_code=403, detail="unknown project for tenant")
     # Permissions are read from the trusted user record, never from the client.
     return ActionContext(
         user_id=user.id,
         tenant_id=x_tenant_id,
         organisation_id=x_tenant_id,
-        project_id=x_project_id,
+        project_id=project.id,
         permissions=list(user.permissions or []),
         allowed_domains=list(INSTALLED_DOMAINS),
-        corpus_id=x_project_id,
+        corpus_id=project.id,
         knowledge_layer="project",
     )
 
