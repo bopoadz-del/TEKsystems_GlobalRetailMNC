@@ -39,6 +39,42 @@ def _headers(user, tenant, project_id):
 
 
 # ---------------------------------------------------------------------------
+# Project must exist under the caller's tenant
+# ---------------------------------------------------------------------------
+
+def test_invented_project_id_rejected(client, db, loaded_projects):
+    """Same tenant + known user, but a project id that does not exist → 403."""
+    resp = client.get(
+        "/v1/overview",
+        headers=_headers("u_ops_manager", TENANT_A, "prj_does_not_exist_zzzz"),
+    )
+    assert resp.status_code == 403
+    assert "unknown project" in resp.json()["detail"].lower()
+
+
+def test_cross_tenant_project_id_rejected(client, db, loaded_projects):
+    """User in tenant A cannot use a real project id that belongs to tenant B."""
+    pid_b = _other_tenant_project(db)
+    db.commit()
+
+    resp = client.get(
+        "/v1/overview",
+        headers=_headers("u_ops_manager", TENANT_A, pid_b),
+    )
+    assert resp.status_code == 403
+    assert "unknown project" in resp.json()["detail"].lower()
+
+
+def test_valid_project_under_tenant_accepted(client, db, loaded_projects):
+    pid_a = loaded_projects["Global Region"]
+    resp = client.get(
+        "/v1/overview",
+        headers=_headers("u_ops_manager", TENANT_A, pid_a),
+    )
+    assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
 # Actions / audit isolation
 # ---------------------------------------------------------------------------
 
