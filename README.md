@@ -11,6 +11,19 @@ This repository is the **product**. Upstream CerebrumDev.ai / Cerebrum-Blocks
 may be used as design references; the action contract and Retail kit ship here
 as a **local kit snapshot** under `backend/app/retailops/kit/`.
 
+---
+
+> ### Part of the CEREBRUM ecosystem — industrialized AI delivery
+>
+> **The Store — [Cerebrum-Blocks](https://github.com/bopoadz-del/Cerebrum-Blocks):** 94+ certified AI blocks, 17 industry kits, one universal API. Build a capability once; every sector inherits it.  
+> **The Factory — [CerebrumDev.ai](https://github.com/bopoadz-del/CerebrumDev.ai):** the client-facing interface that assembles blocks into governed, deployable vertical platforms — evaluation gates in CI, release certification, honest closure reporting.  
+> **The Products — [The Fork](https://github.com/bopoadz-del/The_Fork)** (construction AI — enterprise client pilot) **· [RetailOps](https://github.com/bopoadz-del/TEKsystems_GlobalRetailMNC)** (retail operations — assembled, CI-gated and deployed in under three days).  
+> **The Edge:** sovereign deployment proven — zero-egress on-premise profile, executed air-gap acceptance test, signed sovereignty report.
+>
+> **You are here: A PRODUCT** — specified against a live enterprise role specification and delivered in under three days: the factory's speed proof. Ships standalone, with a local kit snapshot — no runtime dependency on the store.
+
+---
+
 ## Architecture
 
 ```
