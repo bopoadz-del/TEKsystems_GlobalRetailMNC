@@ -23,5 +23,5 @@ langgraph>=0.2.0
 # Ingestion parsers + FreshRetailNet parquet
 pypdf>=5.0.0
 python-docx>=1.1.0
-openpyxl>=3.1.0
+openpyxl>=3.1.5
 pyarrow>=15.0.0
