@@ -3,7 +3,7 @@
 # RETAILOPS_EMBED_BACKEND=fastembed (BGE-small ONNX); RETAILOPS_EMBED_BACKEND=hash
 # is a deterministic fallback used only by unit tests (no ML deps needed there).
 fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
+uvicorn[standard]>=0.51.0
 pydantic>=2.9.0
 python-multipart>=0.0.9
 python-dotenv>=1.0.0
