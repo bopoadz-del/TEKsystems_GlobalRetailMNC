@@ -1,7 +1,7 @@
 # Lean runtime dependencies for the generated RetailOps container.
 # Live embeddings: RETAILOPS_EMBED_BACKEND=fastembed (BGE-small ONNX).
 # Tests use RETAILOPS_EMBED_BACKEND=hash.
-fastapi>=0.115.0
+fastapi>=0.139.2
 uvicorn[standard]>=0.30.0
 pydantic>=2.9.0
 python-multipart>=0.0.9
