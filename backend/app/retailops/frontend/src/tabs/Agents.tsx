@@ -12,15 +12,26 @@ function playbookCounts(m: AgentManifest) {
 }
 
 export function Agents({ principal }: { principal: Principal }) {
+  const principalKey = `${principal.tenantId}:${principal.projectId}:${principal.userId}`;
   const [hats, setHats] = useState<AgentManifest[]>([]);
   const [bases, setBases] = useState<AgentManifest[]>([]);
   const [selected, setSelected] = useState<AgentManifest | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadedKey, setLoadedKey] = useState(principalKey);
+
+  // Reset catalog state when the workspace principal changes (render-time, not in effect).
+  if (loadedKey !== principalKey) {
+    setLoadedKey(principalKey);
+    setHats([]);
+    setBases([]);
+    setSelected(null);
+    setError("");
+    setLoading(true);
+  }
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     api
       .agents(principal)
       .then((r) => {
