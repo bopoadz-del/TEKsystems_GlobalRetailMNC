@@ -16,7 +16,7 @@ pgvector>=0.2.5
 alembic>=1.13.0
 
 # Real semantic embeddings (pilot / production default)
-fastembed>=0.4.0
+fastembed>=0.8.0
 
 # Orchestration
 langgraph>=0.2.0
