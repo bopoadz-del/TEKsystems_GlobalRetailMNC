@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api, type Citation, type Principal } from "../api";
 
 const PUT_OFF_OPTIONS = [
@@ -15,13 +15,16 @@ export function Assistant({ principal }: { principal: Principal }) {
   const [route, setRoute] = useState("");
   const [citations, setCitations] = useState<Citation[]>([]);
   const [plan, setPlan] = useState<Record<string, unknown> | null>(null);
+  const [planProjectId, setPlanProjectId] = useState(principal.projectId);
   const [disabled, setDisabled] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
+  // Clear the prior project's execution plan when the project changes.
+  if (planProjectId !== principal.projectId) {
+    setPlanProjectId(principal.projectId);
     setPlan(null);
-  }, [principal.projectId]);
+  }
 
   const toggle = (id: string) => {
     setDisabled((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));

@@ -8,13 +8,22 @@ function ConfidenceBadge({ value }: { value?: string }) {
 }
 
 export function Learning({ principal }: { principal: Principal }) {
+  const principalKey = `${principal.tenantId}:${principal.projectId}:${principal.userId}`;
   const [profiles, setProfiles] = useState<LearningProfile[]>([]);
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [loadedKey, setLoadedKey] = useState(principalKey);
+
+  // Reset profiles when the workspace principal changes (render-time, not in effect).
+  if (loadedKey !== principalKey) {
+    setLoadedKey(principalKey);
+    setProfiles([]);
+    setError("");
+    setLoading(true);
+  }
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     api
       .learningSummary(principal)
       .then((r) => {
