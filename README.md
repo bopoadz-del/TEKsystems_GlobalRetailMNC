@@ -1,4 +1,4 @@
-# CEREBRUM RetailOps — TEKsystems Global Retail MNC
+# The Product # 2 - CEREBRUM RetailOps — TEKsystems Global Retail MNC
 
 Standalone deployable retail-operations platform for multi-region retail
 operations. It ingests documents and open evaluation datasets, answers
