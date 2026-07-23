@@ -7,6 +7,7 @@ pydantic>=2.9.0
 python-multipart>=0.0.9
 python-dotenv>=1.0.0
 httpx>=0.27.0
+httpx2>=2.8.0  # silences Starlette testclient deprecation warning
 
 # Database + retrieval
 sqlalchemy>=2.0.30
